@@ -1,0 +1,573 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_home/constants.dart';
+import 'package:smart_home/screens/auth/register_screen.dart';
+import 'package:smart_home/screens/dashboard/dashboard_screen.dart';
+import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/widgets/custom_text_field.dart';
+import 'package:smart_home/widgets/glow_button.dart';
+import 'package:smart_home/widgets/theme_toggle_button.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  bool _useEmail = true;
+  bool _obscure = true;
+  bool _rememberMe = false;
+  String _selectedCountry = 'Mali';
+
+  bool _isFirstNameValid = true;
+  bool _isLastNameValid = true;
+  bool _isEmailValid = true;
+  bool _isPhoneValid = true;
+
+  static const String _rememberPhoneKey = 'remember_phone';
+  static const String _savedPhoneKey = 'saved_phone';
+  static const String _rememberEmailKey = 'remember_email';
+  static const String _savedEmailKey = 'saved_email';
+  static const String _cachedUserNameKey = 'cached_user_name';
+  static const String _loginUseEmailKey = 'login_use_email';
+
+  final Map<String, String> _countryCodes = {
+    'Mali': '+223',
+    'France': '+33',
+    'Sénégal': '+221',
+    'Côte d\'Ivoire': '+225',
+    'Burkina Faso': '+226',
+    'Niger': '+227',
+    'Guinée': '+224',
+  };
+
+  final Map<String, int> _phoneLengths = {
+    'Mali': 8,
+    'France': 9,
+    'Sénégal': 9,
+    'Côte d\'Ivoire': 10,
+    'Burkina Faso': 8,
+    'Niger': 8,
+    'Guinée': 9,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rememberPhone = prefs.getBool(_rememberPhoneKey) ?? false;
+    final savedPhone = prefs.getString(_savedPhoneKey) ?? '';
+    final rememberEmail = prefs.getBool(_rememberEmailKey) ?? false;
+    final savedEmail = prefs.getString(_savedEmailKey) ?? '';
+    final savedModeEmail = prefs.getBool(_loginUseEmailKey);
+
+    if (!mounted) return;
+
+    setState(() {
+      if (rememberPhone && savedPhone.isNotEmpty) {
+        _useEmail = false;
+        _rememberMe = true;
+        _phoneController.text = savedPhone;
+      } else if (rememberEmail && savedEmail.isNotEmpty) {
+        _useEmail = true;
+        _rememberMe = true;
+        _emailController.text = savedEmail;
+      } else if (savedModeEmail != null) {
+        _useEmail = savedModeEmail;
+        _rememberMe = rememberPhone || rememberEmail;
+      }
+    });
+  }
+
+  Future<void> _saveCredentialsPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_loginUseEmailKey, _useEmail);
+
+    if (!_rememberMe) {
+      await prefs.remove(_rememberPhoneKey);
+      await prefs.remove(_savedPhoneKey);
+      await prefs.remove(_rememberEmailKey);
+      await prefs.remove(_savedEmailKey);
+      return;
+    }
+
+    if (_useEmail) {
+      await prefs.setBool(_rememberEmailKey, true);
+      await prefs.setString(_savedEmailKey, _emailController.text.trim());
+      await prefs.remove(_rememberPhoneKey);
+      await prefs.remove(_savedPhoneKey);
+    } else {
+      await prefs.setBool(_rememberPhoneKey, true);
+      await prefs.setString(_savedPhoneKey, _phoneController.text.trim());
+      await prefs.remove(_rememberEmailKey);
+      await prefs.remove(_savedEmailKey);
+    }
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  bool _validateFirstName(String name) {
+    if (name.isEmpty) return false;
+    if (name.length < 2) return false;
+    return RegExp(r'^[a-zA-Z\s-]+$').hasMatch(name);
+  }
+
+  bool _validateLastName(String name) {
+    if (name.isEmpty) return false;
+    if (name.length < 2) return false;
+    return RegExp(r'^[a-zA-Z\s-]+$').hasMatch(name);
+  }
+
+  bool _validateEmail(String email) {
+    if (email.isEmpty) return false;
+    return RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        .hasMatch(email);
+  }
+
+  bool _validatePhone(String phone) {
+    if (phone.isEmpty) return false;
+    final requiredLength = _phoneLengths[_selectedCountry] ?? 8;
+    if (phone.length != requiredLength) return false;
+    return RegExp(r'^[0-9]+$').hasMatch(phone);
+  }
+
+  void _validateFields() {
+    setState(() {
+      _isFirstNameValid = _validateFirstName(_firstNameController.text);
+      _isLastNameValid = _validateLastName(_lastNameController.text);
+      _isEmailValid = _validateEmail(_emailController.text);
+      _isPhoneValid = _validatePhone(_phoneController.text);
+    });
+  }
+
+  Future<void> _submit() async {
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text;
+
+    if (firstName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le prénom est requis')),
+      );
+      return;
+    }
+    if (lastName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le nom est requis')),
+      );
+      return;
+    }
+
+    if (_useEmail) {
+      if (email.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('L’email est requis')),
+        );
+        return;
+      }
+      if (!_validateEmail(email)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Format email invalide')),
+        );
+        return;
+      }
+    } else {
+      if (phone.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Le numéro de téléphone est requis')),
+        );
+        return;
+      }
+      if (!_validatePhone(phone)) {
+        final requiredLength = _phoneLengths[_selectedCountry] ?? 8;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Numéro invalide: $_selectedCountry nécessite $requiredLength chiffres',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le mot de passe est requis')),
+      );
+      return;
+    }
+
+    _validateFields();
+    if (!_isFirstNameValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Prénom invalide')),
+      );
+      return;
+    }
+    if (!_isLastNameValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nom invalide')),
+      );
+      return;
+    }
+
+    await _saveCredentialsPreference();
+
+    final displayName =
+        [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
+    final prefs = await SharedPreferences.getInstance();
+    if (displayName.isNotEmpty) {
+      await prefs.setString(_cachedUserNameKey, displayName);
+      await AuthService.instance.setCachedUserName(displayName);
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const DashboardScreen()),
+    );
+  }
+
+  Widget _modeToggle() {
+    final c = context.smartColors;
+    final inactiveBorder = c.textSecondary.withValues(alpha: 0.45);
+    return Row(
+      children: [
+        Expanded(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() {
+                _useEmail = true;
+                _validateFields();
+              }),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _useEmail
+                      ? accentColor.withValues(alpha: 0.25)
+                      : c.inputFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _useEmail ? accentColor : inactiveBorder,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Email',
+                  style: TextStyle(
+                    color: _useEmail ? accentColor : c.textSecondary,
+                    fontWeight:
+                        _useEmail ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() {
+                _useEmail = false;
+                _validateFields();
+              }),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: !_useEmail
+                      ? accentColor.withValues(alpha: 0.25)
+                      : c.inputFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: !_useEmail ? accentColor : inactiveBorder,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Téléphone',
+                  style: TextStyle(
+                    color: !_useEmail ? accentColor : c.textSecondary,
+                    fontWeight:
+                        !_useEmail ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.smartColors;
+    return Scaffold(
+      backgroundColor: c.scaffoldBackground,
+      body: Stack(
+        children: [
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: c.card,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Bienvenue',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Connecte-toi pour continuer',
+                      style: TextStyle(color: c.textSecondary),
+                    ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CustomTextField(
+                        hint: 'Prénom',
+                        icon: Icons.person_outline,
+                        controller: _firstNameController,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => _validateFields(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: CustomTextField(
+                        hint: 'Nom',
+                        icon: Icons.person,
+                        controller: _lastNameController,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => _validateFields(),
+                      ),
+                    ),
+                  ],
+                ),
+                if (!_isFirstNameValid || !_isLastNameValid) ...[
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Prénom / nom invalides (lettres, 2 caractères min.)',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _modeToggle(),
+                const SizedBox(height: 12),
+                if (_useEmail)
+                  CustomTextField(
+                    hint: 'Email',
+                    icon: Icons.email,
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => _validateFields(),
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: c.inputFill,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: accentColor, width: 1),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCountry,
+                            dropdownColor: c.card,
+                            iconEnabledColor: c.textSecondary,
+                            style: TextStyle(
+                              color: c.textPrimary,
+                              fontSize: 13,
+                            ),
+                            isDense: true,
+                            items: _countryCodes.keys.map((c) {
+                              return DropdownMenuItem(
+                                value: c,
+                                child: Text(
+                                  '${_countryCodes[c]} $c',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setState(() {
+                                  _selectedCountry = v;
+                                  _validateFields();
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: CustomTextField(
+                          hint:
+                              '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
+                          icon: Icons.phone,
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          onChanged: (_) => _validateFields(),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (_useEmail && !_isEmailValid) ...[
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Email invalide',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                    ),
+                  ),
+                ],
+                if (!_useEmail && !_isPhoneValid && _phoneController.text.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Numéro invalide pour le pays choisi',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 15),
+                CustomTextField(
+                  hint: 'Mot de passe',
+                  icon: Icons.lock,
+                  obscure: _obscure,
+                  controller: _passwordController,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  suffix: IconButton(
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _rememberMe,
+                      onChanged: (v) =>
+                          setState(() => _rememberMe = v ?? false),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () =>
+                            setState(() => _rememberMe = !_rememberMe),
+                        child: Text(
+                          'Se souvenir de moi',
+                          style: TextStyle(color: c.textSecondary),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                GlowButton(
+                  text: 'Se connecter',
+                  onTap: _submit,
+                ),
+                const SizedBox(height: 15),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Pas de compte ? ',
+                      style: TextStyle(color: c.textSecondary),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RegisterScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'S’inscrire',
+                        style: TextStyle(
+                          color: accentColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 4,
+            right: 8,
+            child: const ThemeToggleButton(),
+          ),
+        ],
+      ),
+    );
+  }
+}

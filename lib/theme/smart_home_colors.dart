@@ -1,0 +1,162 @@
+import 'package:flutter/material.dart';
+
+/// Couleurs sémantiques (clair / sombre), exposées via [ThemeExtension].
+@immutable
+class SmartHomeColors extends ThemeExtension<SmartHomeColors> {
+  const SmartHomeColors({
+    required this.scaffoldBackground,
+    required this.card,
+    required this.inputFill,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.surfaceElevated,
+    required this.planCanvasBg,
+    required this.planRoomIdle,
+    required this.planRoomSelectedFill,
+    required this.planBorder,
+    required this.planBorderSelected,
+    required this.planGrid,
+    required this.planHandle,
+    required this.planHandleRing,
+    required this.planDeviceBg,
+    required this.planNameColor,
+    required this.planIconColor,
+  });
+
+  final Color scaffoldBackground;
+  final Color card;
+  final Color inputFill;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color surfaceElevated;
+  final Color planCanvasBg;
+  final Color planRoomIdle;
+  final Color planRoomSelectedFill;
+  final Color planBorder;
+  final Color planBorderSelected;
+  final Color planGrid;
+  final Color planHandle;
+  final Color planHandleRing;
+  final Color planDeviceBg;
+  final Color planNameColor;
+  final Color planIconColor;
+
+  static final SmartHomeColors dark = SmartHomeColors(
+    scaffoldBackground: const Color(0xFF0F172A),
+    card: const Color(0xFF1E293B),
+    inputFill: const Color(0xFF020617),
+    textPrimary: const Color(0xFFFFFFFF),
+    textSecondary: const Color(0xFF9CA3AF),
+    surfaceElevated: const Color(0xFF334155),
+    planCanvasBg: const Color(0xFF020617),
+    planRoomIdle: const Color(0xE61E293B),
+    planRoomSelectedFill: const Color(0x3822C55E),
+    planBorder: const Color(0x3FFFFFFF),
+    planBorderSelected: const Color(0xFF06B6D4),
+    planGrid: const Color(0x0FFFFFFF),
+    planHandle: const Color(0xFF06B6D4),
+    planHandleRing: const Color(0xFFFFFFFF),
+    planDeviceBg: const Color(0x73000000),
+    planNameColor: const Color(0xFFFFFFFF),
+    planIconColor: const Color(0xFFFFFFFF),
+  );
+
+  static const SmartHomeColors light = SmartHomeColors(
+    scaffoldBackground: Color(0xFFF8FAFC),
+    card: Color(0xFFFFFFFF),
+    inputFill: Color(0xFFF1F5F9),
+    textPrimary: Color(0xFF0F172A),
+    textSecondary: Color(0xFF64748B),
+    surfaceElevated: Color(0xFFE2E8F0),
+    planCanvasBg: Color(0xFFEEF2F7),
+    planRoomIdle: Color(0xF2FFFFFF),
+    planRoomSelectedFill: Color(0x3322C55E),
+    planBorder: Color(0xFFCBD5E1),
+    planBorderSelected: Color(0xFF0891B2),
+    planGrid: Color(0x14000000),
+    planHandle: Color(0xFF0891B2),
+    planHandleRing: Color(0xFF0F172A),
+    planDeviceBg: Color(0x330F172A),
+    planNameColor: Color(0xFF0F172A),
+    planIconColor: Color(0xFF0F172A),
+  );
+
+  @override
+  SmartHomeColors copyWith({
+    Color? scaffoldBackground,
+    Color? card,
+    Color? inputFill,
+    Color? textPrimary,
+    Color? textSecondary,
+    Color? surfaceElevated,
+    Color? planCanvasBg,
+    Color? planRoomIdle,
+    Color? planRoomSelectedFill,
+    Color? planBorder,
+    Color? planBorderSelected,
+    Color? planGrid,
+    Color? planHandle,
+    Color? planHandleRing,
+    Color? planDeviceBg,
+    Color? planNameColor,
+    Color? planIconColor,
+  }) {
+    return SmartHomeColors(
+      scaffoldBackground: scaffoldBackground ?? this.scaffoldBackground,
+      card: card ?? this.card,
+      inputFill: inputFill ?? this.inputFill,
+      textPrimary: textPrimary ?? this.textPrimary,
+      textSecondary: textSecondary ?? this.textSecondary,
+      surfaceElevated: surfaceElevated ?? this.surfaceElevated,
+      planCanvasBg: planCanvasBg ?? this.planCanvasBg,
+      planRoomIdle: planRoomIdle ?? this.planRoomIdle,
+      planRoomSelectedFill:
+          planRoomSelectedFill ?? this.planRoomSelectedFill,
+      planBorder: planBorder ?? this.planBorder,
+      planBorderSelected: planBorderSelected ?? this.planBorderSelected,
+      planGrid: planGrid ?? this.planGrid,
+      planHandle: planHandle ?? this.planHandle,
+      planHandleRing: planHandleRing ?? this.planHandleRing,
+      planDeviceBg: planDeviceBg ?? this.planDeviceBg,
+      planNameColor: planNameColor ?? this.planNameColor,
+      planIconColor: planIconColor ?? this.planIconColor,
+    );
+  }
+
+  @override
+  ThemeExtension<SmartHomeColors> lerp(
+    ThemeExtension<SmartHomeColors>? other,
+    double t,
+  ) {
+    if (other is! SmartHomeColors) return this;
+    return SmartHomeColors(
+      scaffoldBackground:
+          Color.lerp(scaffoldBackground, other.scaffoldBackground, t)!,
+      card: Color.lerp(card, other.card, t)!,
+      inputFill: Color.lerp(inputFill, other.inputFill, t)!,
+      textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      surfaceElevated:
+          Color.lerp(surfaceElevated, other.surfaceElevated, t)!,
+      planCanvasBg: Color.lerp(planCanvasBg, other.planCanvasBg, t)!,
+      planRoomIdle: Color.lerp(planRoomIdle, other.planRoomIdle, t)!,
+      planRoomSelectedFill:
+          Color.lerp(planRoomSelectedFill, other.planRoomSelectedFill, t)!,
+      planBorder: Color.lerp(planBorder, other.planBorder, t)!,
+      planBorderSelected:
+          Color.lerp(planBorderSelected, other.planBorderSelected, t)!,
+      planGrid: Color.lerp(planGrid, other.planGrid, t)!,
+      planHandle: Color.lerp(planHandle, other.planHandle, t)!,
+      planHandleRing:
+          Color.lerp(planHandleRing, other.planHandleRing, t)!,
+      planDeviceBg: Color.lerp(planDeviceBg, other.planDeviceBg, t)!,
+      planNameColor: Color.lerp(planNameColor, other.planNameColor, t)!,
+      planIconColor: Color.lerp(planIconColor, other.planIconColor, t)!,
+    );
+  }
+}
+
+extension SmartHomeColorsX on BuildContext {
+  SmartHomeColors get smartColors =>
+      Theme.of(this).extension<SmartHomeColors>() ?? SmartHomeColors.dark;
+}

@@ -6,51 +6,52 @@ import '../../../widget_utils.dart';
 
 class PowerControl extends StatelessWidget {
   final bool isOn;
-  final Function onSwitched;
+  final ValueChanged<bool> onSwitched;
   final Color tempColor;
 
   const PowerControl({
-    Key key,
-    @required this.isOn,
-    @required this.onSwitched,
-    @required this.tempColor,
-  }) : super(key: key);
+    super.key,
+    required this.isOn,
+    required this.onSwitched,
+    required this.tempColor,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
       child: wrapInCard(
-        backgroundColor: tempColor.withOpacity(0.5),
+        backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.82),
         padding: defaultPadding - 4,
         widget: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Power', style: Theme.of(context).textTheme.bodyText1),
-            Spacer(),
+            Text('Power', style: Theme.of(context).textTheme.bodyLarge),
+            const Spacer(),
             Row(
               children: [
                 Text.rich(TextSpan(children: [
                   TextSpan(
                     text: 'OFF',
                     style: TextStyle(
-                        color: Colors.white.withOpacity(isOn ? 0.3 : 1)),
+                        color: scheme.onSurface.withValues(alpha: isOn ? 0.35 : 1)),
                   ),
                   TextSpan(
                     text: '/',
-                    style: TextStyle(color: Colors.white.withOpacity(0.3)),
+                    style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.35)),
                   ),
                   TextSpan(
                     text: 'ON',
                     style: TextStyle(
-                        color: Colors.white.withOpacity(isOn ? 1 : 0.3)),
+                        color: scheme.onSurface.withValues(alpha: isOn ? 1 : 0.35)),
                   ),
                 ])),
-                Spacer(),
+                const Spacer(),
                 Transform.scale(
                   scale: 0.8,
                   child: CupertinoSwitch(
-                    activeColor: Colors.white38,
-                    trackColor: Colors.white12,
+                    activeTrackColor: tempColor.withValues(alpha: 0.6),
+                    inactiveTrackColor: scheme.onSurface.withValues(alpha: 0.12),
                     value: isOn,
                     onChanged: onSwitched,
                   ),

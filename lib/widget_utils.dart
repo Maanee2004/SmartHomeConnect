@@ -2,24 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
 
 Widget wrapInCard({
-  Widget widget,
+  required Widget widget,
   double padding = defaultPadding,
-  Color backgroundColor,
+  Color? backgroundColor,
 }) {
   return AnimatedContainer(
-    duration: Duration(milliseconds: 200),
+    duration: const Duration(milliseconds: 200),
     padding: EdgeInsets.all(padding),
-    child: widget,
     decoration: BoxDecoration(
       color: backgroundColor,
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.12),
-          blurRadius: 0,
-          spreadRadius: -0.5,
+          color: Colors.black.withValues(alpha: 0.25),
+          blurRadius: 24,
+          spreadRadius: -6,
+          offset: const Offset(0, 18),
         )
       ],
-      borderRadius: BorderRadius.all(Radius.circular(defaultPadding)),
+      borderRadius: const BorderRadius.all(Radius.circular(defaultPadding)),
     ),
+    child: widget,
   );
 }

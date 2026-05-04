@@ -7,11 +7,11 @@ import '../../../constants.dart';
 
 class TempDisplay extends StatelessWidget {
   const TempDisplay({
-    Key key,
-    @required this.currentTemp,
-    @required this.progress,
-    @required this.mColor,
-  }) : super(key: key);
+    super.key,
+    required this.currentTemp,
+    required this.progress,
+    required this.mColor,
+  });
 
   final double progress;
   final double currentTemp;
@@ -20,6 +20,7 @@ class TempDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AspectRatio(
       aspectRatio: 1,
       child: Padding(
@@ -32,7 +33,7 @@ class TempDisplay extends StatelessWidget {
                 child: ClipOval(
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
-                    child: Container(color: Colors.white38),
+                    child: Container(color: glassColor),
                   ),
                 ),
               ),
@@ -49,34 +50,37 @@ class TempDisplay extends StatelessWidget {
                 padding: EdgeInsets.all(trackWidth),
                 child: Container(
                   decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: scheme.surfaceContainerHighest,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: mColor.withOpacity(0.6),
+                          color: mColor.withValues(alpha: 0.45),
                           blurRadius: defaultPadding,
                           offset: Offset(0, defaultPadding + 10),
-                          spreadRadius: 6,
+                          spreadRadius: 4,
                         )
                       ]),
                   child: Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: 8),
-                        Text(
-                          '${currentTemp.toInt()}',
-                          style: Theme.of(context).textTheme.headline2,
-                        ),
-                        Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: Text(
-                            '°C',
-                            style: Theme.of(context).textTheme.caption,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(width: 8),
+                          Text(
+                            '${currentTemp.toInt()}',
+                            style: Theme.of(context).textTheme.displayMedium,
                           ),
-                        ),
-                      ],
+                          Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: Text(
+                              '°C',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -123,7 +127,7 @@ class TempDisplayPainter extends CustomPainter {
       0,
       pi,
       true,
-      Paint()..color = Colors.white38,
+      Paint()..color = glassColor,
     );
 
     canvas.drawArc(

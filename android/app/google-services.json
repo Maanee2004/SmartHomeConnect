@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "397104818734",
+    "firebase_url": "https://smarthousedb-mmd-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "smarthousedb-mmd",
+    "storage_bucket": "smarthousedb-mmd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:397104818734:android:11928dd8d26deb020f4dbf",
+        "android_client_info": {
+          "package_name": "com.example.smart_home"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5cO1ecQHaKL3culZMV_lKTLFN58Erql8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:397104818734:android:71a1c1af34bc10840f4dbf",
+        "android_client_info": {
+          "package_name": "com.example.smarthomeconnect"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5cO1ecQHaKL3culZMV_lKTLFN58Erql8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

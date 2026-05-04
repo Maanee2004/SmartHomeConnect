@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
 
-import 'compoents/ac_screen_body.dart';
+import 'components/ac_screen_body.dart';
 
 class ACScreen extends StatelessWidget {
   const ACScreen({
-    Key key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          'Smart AC',
+          'SMARTHOME ',
           style: Theme.of(context)
               .textTheme
-              .bodyText1
-              .copyWith(color: Colors.black),
+              .bodyLarge
+              ?.copyWith(color: scheme.onSurface),
         ),
         leading: Row(
           children: [
-            SizedBox(width: 8),
-            BackButton(color: Colors.black),
+            const SizedBox(width: 8),
+            BackButton(color: scheme.onSurface),
           ],
         ),
         elevation: 0,
@@ -30,7 +31,7 @@ class ACScreen extends StatelessWidget {
         toolbarHeight: 92,
         centerTitle: true,
       ),
-      body: ACScreenBody(),
+      body: const ACScreenBody(),
     );
   }
 }

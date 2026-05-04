@@ -4,16 +4,16 @@ import '../../../constants.dart';
 import 'rounded_icon.dart';
 
 class ConditionerMode extends StatelessWidget {
-  final Function onTap;
+  final ValueChanged<int> onTap;
   final Color tempColor;
   final int selectedItem;
 
   const ConditionerMode({
-    Key key,
-    @required this.onTap,
-    @required this.tempColor,
-    @required this.selectedItem,
-  }) : super(key: key);
+    super.key,
+    required this.onTap,
+    required this.tempColor,
+    required this.selectedItem,
+  });
 
   @override
   Widget build(BuildContext context) {

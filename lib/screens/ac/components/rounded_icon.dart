@@ -6,21 +6,21 @@ import '../../../widget_utils.dart';
 
 class RoundedIconButton extends StatelessWidget {
   const RoundedIconButton({
-    Key key,
-    @required this.icon,
+    super.key,
+    required this.icon,
     this.isSelected = false,
     this.onTap,
-    this.tempColor,
-  }) : super(key: key);
+    required this.tempColor,
+  });
 
   final String icon;
-  final isSelected;
-  final Function onTap;
+  final bool isSelected;
+  final VoidCallback? onTap;
   final Color tempColor;
 
   @override
   Widget build(BuildContext context) {
-    var bgColor = isSelected ? Colors.white : tempColor.withOpacity(0.4);
+    var bgColor = isSelected ? Colors.white : tempColor.withValues(alpha: 0.4);
     return InkWell(
         onTap: onTap,
         child: wrapInCard(
@@ -28,7 +28,10 @@ class RoundedIconButton extends StatelessWidget {
             icon,
             width: 24,
             height: 24,
-            color: isSelected ? Colors.black : Colors.white,
+            colorFilter: ColorFilter.mode(
+              isSelected ? Colors.black : Colors.white,
+              BlendMode.srcIn,
+            ),
           ),
           padding: defaultPadding + 4,
           backgroundColor: bgColor,
