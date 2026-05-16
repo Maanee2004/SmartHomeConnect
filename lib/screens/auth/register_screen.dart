@@ -24,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _useEmail = true;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  bool _submitting = false;
   String _selectedCountry = 'Mali';
 
   bool _isFirstNameValid = true;
@@ -97,6 +98,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
@@ -188,17 +190,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final displayName =
-        [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
-    if (displayName.isNotEmpty) {
-      await AuthService.instance.setCachedUserName(displayName);
-    }
+    setState(() => _submitting = true);
+    try {
+      final displayName =
+          [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
+      if (displayName.isNotEmpty) {
+        await AuthService.instance.setCachedUserName(displayName);
+      }
 
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ton compte a été créé avec succès')),
-    );
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ton compte a été créé avec succès')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   Widget _modeToggle() {
@@ -494,6 +502,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 24),
                 GlowButton(
                   text: 'S\'inscrire',
+                  loading: _submitting,
+                  enabled: !_submitting,
                   onTap: _submit,
                 ),
                 const SizedBox(height: 15),

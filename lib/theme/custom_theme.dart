@@ -69,6 +69,16 @@ class CustomTheme {
       ),
       textTheme: CustomTypography.textThemeFor(colors),
       extensions: <ThemeExtension<dynamic>>[colors],
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: FadeUpwardsPageTransitionsBuilder(),
+        },
+      ),
       cardTheme: CardThemeData(
         color: colors.surfaceElevated,
         elevation: isDark ? 0 : 1,

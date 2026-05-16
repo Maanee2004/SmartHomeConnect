@@ -2,37 +2,54 @@ import 'package:flutter/cupertino.dart';
 
 const double defaultPadding = 20.0;
 
-/// Palette principale (cohérence app).
-const Color bgColor = Color(0xFF0F172A);
-const Color cardColor = Color(0xFF1E293B);
-const Color primaryColor = Color(0xFF22C55E); // vert glow
-const Color accentColor = Color(0xFF06B6D4); // turquoise
+// --- Palette « hardware » sombre (un accent vert sage, surfaces discrètes) ---
+// Mood : calme, technique, fiable.
 
-/// Fond des champs (login / register).
-const Color inputFillColor = Color(0xFF020617);
+/// Fond principal — gris bleu presque noir.
+const Color bgColor = Color(0xFF0D1117);
+
+/// Cartes / panneaux — légèrement plus clair que le fond.
+const Color cardColor = Color(0xFF161B22);
+
+/// Accent unique (CTA, focus, liens) — vert sage désaturé.
+const Color primaryColor = Color(0xFF6D9A78);
+
+/// Alias : même teinte (pas de second accent néon type cyan).
+const Color accentColor = Color(0xFF6D9A78);
+
+/// Champs remplis, surfaces enfoncées.
+const Color inputFillColor = Color(0xFF21262D);
+
+/// Bordures discrètes (outline champs, séparateurs).
+const Color borderSubtle = Color(0xFF30363D);
 
 const Color appBg = bgColor;
 const Color surfaceColor = cardColor;
-const Color textPrimary = Color(0xFFFFFFFF);
-const Color textSecondary = Color(0xFF9CA3AF);
-const Color disabledColor = Color(0xFFD3D3D3);
 
-const Color successColor = Color(0xFF4CAF50);
-const Color warningColor = Color(0xFFFF9800);
-const Color errorColor = Color(0xFFF44336);
-const Color infoColor = Color(0xFF2196F3);
+/// Texte principal — blanc cassé (pas #FFF pur partout).
+const Color textPrimary = Color(0xFFE6EDF3);
 
-/// Alias historiques.
+/// Texte secondaire / labels.
+const Color textSecondary = Color(0xFF8B949E);
+
+const Color disabledColor = Color(0xFF6E7681);
+
+const Color successColor = Color(0xFF6D9A78);
+const Color warningColor = Color(0xFFD4A72C);
+const Color errorColor = Color(0xFFDA6B6B);
+const Color infoColor = Color(0xFF6E8A9E);
+
 const Color constColor = textPrimary;
 
-const Color surfaceElevated = Color(0xFF334155);
-const Color glassColor = Color(0x660F172A);
+const Color surfaceElevated = Color(0xFF2D333B);
+const Color glassColor = Color(0x660D1117);
 
-const Color bgGradientBotomStart = accentColor;
-const Color bgGradientBotomStartQ = primaryColor;
-const Color bgGradientBottomMiddle = cardColor;
-const Color bgGradientBotomEndQ = warningColor;
-const Color bgGradientBotomEnd = errorColor;
+/// Gradients utilitaires (ex. AC) — restent dans les tons verts/gris, pas arc-en-ciel.
+const Color bgGradientBotomStart = Color(0xFF5D8267);
+const Color bgGradientBotomStartQ = Color(0xFF6D9A78);
+const Color bgGradientBottomMiddle = Color(0xFF3D5244);
+const Color bgGradientBotomEndQ = Color(0xFF4A5C52);
+const Color bgGradientBotomEnd = Color(0xFF2D333B);
 
 Color getColor(double progress) {
   var first = mapToRange(progress, 0, 1, 0, 0.25);

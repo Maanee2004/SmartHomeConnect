@@ -1,30 +1,28 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility that Flutter provides. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:smart_home/main.dart';
+import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/widgets/load_error_view.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('LoadErrorView appelle onRetry au tap', (WidgetTester tester) async {
+    var retries = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true).copyWith(
+          extensions: <ThemeExtension<dynamic>>[SmartHomeColors.dark],
+        ),
+        home: Scaffold(
+          body: LoadErrorView(
+            message: 'Erreur réseau simulée',
+            onRetry: () => retries++,
+          ),
+        ),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    expect(find.text('Réessayer'), findsOneWidget);
+    await tester.tap(find.text('Réessayer'));
     await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(retries, 1);
   });
 }

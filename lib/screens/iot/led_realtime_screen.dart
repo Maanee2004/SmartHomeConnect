@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_home/models/device.dart';
+import 'package:smart_home/services/firestore_layout.dart';
 import 'package:smart_home/widgets/device_card.dart';
 
 class LedRealtimeScreen extends StatefulWidget {
@@ -14,34 +16,33 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
   bool _isSending = false;
 
   DocumentReference<Map<String, dynamic>> get _ledDoc =>
-      FirebaseFirestore.instance.collection('maison').doc('led_status');
+      FirebaseFirestore.instance
+          .collection(FirestorePaths.kDefaultHomeId)
+          .doc('led_status');
 
-  Future<void> _toggle(int currentEtat) async {
+  Future<void> _setEtat(int nextEtat) async {
     if (_isSending) return;
-    final nextEtat = currentEtat == 0 ? 1 : 0;
     setState(() => _isSending = true);
     try {
       await _ledDoc.set({'etat': nextEtat}, SetOptions(merge: true));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(nextEtat == 1 ? 'Commande envoyée: ON' : 'Commande envoyée: OFF'),
+          content: Text(
+            nextEtat == 1 ? 'Commande envoyée: ON' : 'Commande envoyée: OFF',
+          ),
           duration: const Duration(milliseconds: 900),
         ),
       );
     } on FirebaseException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Échec écriture Firestore: ${e.code}'),
-        ),
+        SnackBar(content: Text('Échec écriture Firestore: ${e.code}')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Échec commande: $e'),
-        ),
+        SnackBar(content: Text('Échec commande: $e')),
       );
     } finally {
       if (mounted) setState(() => _isSending = false);
@@ -53,10 +54,10 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
     final firebaseOk = Firebase.apps.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text("LED"),
+        title: const Text('LED'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(12),
@@ -67,9 +68,20 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
             final isOn = etat == 1;
             return Center(
               child: DeviceCard(
-                name: "Lampe salon",
-                state: isOn,
-                onTap: !firebaseOk || _isSending ? () {} : () => _toggle(etat),
+                device: Device(
+                  id: 'legacy-led',
+                  name: 'Lampe salon',
+                  roomId: '',
+                  type: 'LIGHT',
+                  state: {'isOn': isOn},
+                  isOnline: firebaseOk,
+                ),
+                onCommand: !firebaseOk || _isSending
+                    ? (_) async {}
+                    : (patch) async {
+                        final wantOn = patch['isOn'] == true;
+                        await _setEtat(wantOn ? 1 : 0);
+                      },
               ),
             );
           },

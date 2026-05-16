@@ -1,37 +1,47 @@
 import 'package:flutter/material.dart';
+import 'package:smart_home/models/device.dart';
 import 'package:smart_home/widgets/device_card.dart';
 
+/// Ancienne démo grille — préférer [DashboardScreen] (liste pièces).
 class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
 
-  static const List<Map<String, dynamic>> devices = [
-    {"name": "Lampe salon", "state": true},
-    {"name": "Ventilateur", "state": false},
+  static final List<Device> devices = [
+    Device(
+      id: 'd1',
+      name: 'Lampe salon',
+      roomId: 'r1',
+      type: 'LIGHT',
+      state: const {'isOn': true},
+    ),
+    Device(
+      id: 'd2',
+      name: 'Ventilateur',
+      roomId: 'r1',
+      type: 'FAN',
+      state: const {'isOn': false, 'speed': 0},
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: const Text("Smart Home"),
+        title: const Text('Smart Home (démo)'),
       ),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(12),
-        child: GridView.count(
-          crossAxisCount: 2,
-          childAspectRatio: 1,
-          children: devices.map((d) {
-            return DeviceCard(
-              name: d["name"] as String,
-              state: d["state"] as bool,
-              onTap: () {},
-            );
-          }).toList(),
-        ),
+        children: devices
+            .map(
+              (d) => DeviceCard(
+                device: d,
+                onCommand: (_) async {},
+              ),
+            )
+            .toList(),
       ),
     );
   }
 }
-

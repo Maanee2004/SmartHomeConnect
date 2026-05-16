@@ -23,9 +23,16 @@ class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  final _focusFirst = FocusNode();
+  final _focusLast = FocusNode();
+  final _focusEmail = FocusNode();
+  final _focusPhone = FocusNode();
+  final _focusPassword = FocusNode();
+
   bool _useEmail = true;
   bool _obscure = true;
   bool _rememberMe = false;
+  bool _submitting = false;
   String _selectedCountry = 'Mali';
 
   bool _isFirstNameValid = true;
@@ -119,6 +126,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _focusFirst.dispose();
+    _focusLast.dispose();
+    _focusEmail.dispose();
+    _focusPhone.dispose();
+    _focusPassword.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
@@ -161,7 +173,26 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  void _showForgotPasswordDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mot de passe oublié'),
+        content: const Text(
+          'La réinitialisation du mot de passe sera disponible bientôt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
+    if (_submitting) return;
     final firstName = _firstNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
@@ -236,20 +267,27 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    await _saveCredentialsPreference();
+    setState(() => _submitting = true);
+    try {
+      await _saveCredentialsPreference();
 
-    final displayName =
-        [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
-    final prefs = await SharedPreferences.getInstance();
-    if (displayName.isNotEmpty) {
-      await prefs.setString(_cachedUserNameKey, displayName);
-      await AuthService.instance.setCachedUserName(displayName);
+      final displayName =
+          [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
+      final prefs = await SharedPreferences.getInstance();
+      if (displayName.isNotEmpty) {
+        await prefs.setString(_cachedUserNameKey, displayName);
+        await AuthService.instance.setCachedUserName(displayName);
+      }
+
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 280));
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
-
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DashboardScreen()),
-    );
   }
 
   Widget _modeToggle() {
@@ -376,7 +414,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         hint: 'Prénom',
                         icon: Icons.person_outline,
                         controller: _firstNameController,
+                        focusNode: _focusFirst,
+                        semanticsLabel: 'Prénom',
                         textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _focusLast.requestFocus(),
                         onChanged: (_) => _validateFields(),
                       ),
                     ),
@@ -386,7 +427,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         hint: 'Nom',
                         icon: Icons.person,
                         controller: _lastNameController,
+                        focusNode: _focusLast,
+                        semanticsLabel: 'Nom',
                         textInputAction: TextInputAction.next,
+                        onSubmitted: (_) {
+                          if (_useEmail) {
+                            _focusEmail.requestFocus();
+                          } else {
+                            _focusPhone.requestFocus();
+                          }
+                        },
                         onChanged: (_) => _validateFields(),
                       ),
                     ),
@@ -410,8 +460,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     hint: 'Email',
                     icon: Icons.email,
                     controller: _emailController,
+                    focusNode: _focusEmail,
+                    semanticsLabel: 'Adresse e-mail',
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => _focusPassword.requestFocus(),
                     onChanged: (_) => _validateFields(),
                   )
                 else
@@ -462,8 +515,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
                           icon: Icons.phone,
                           controller: _phoneController,
+                          focusNode: _focusPhone,
+                          semanticsLabel: 'Numéro de téléphone',
                           keyboardType: TextInputType.phone,
                           textInputAction: TextInputAction.next,
+                          onSubmitted: (_) => _focusPassword.requestFocus(),
                           onChanged: (_) => _validateFields(),
                         ),
                       ),
@@ -495,6 +551,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: Icons.lock,
                   obscure: _obscure,
                   controller: _passwordController,
+                  focusNode: _focusPassword,
+                  semanticsLabel: 'Mot de passe',
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
                   suffix: IconButton(
@@ -505,7 +563,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed:
+                        _submitting ? null : _showForgotPasswordDialog,
+                    child: Text(
+                      'Mot de passe oublié ?',
+                      style: TextStyle(
+                        color: accentColor.withValues(alpha: 0.95),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
                 Row(
                   children: [
                     Checkbox(
@@ -528,6 +600,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 GlowButton(
                   text: 'Se connecter',
+                  loading: _submitting,
+                  enabled: !_submitting,
                   onTap: _submit,
                 ),
                 const SizedBox(height: 15),

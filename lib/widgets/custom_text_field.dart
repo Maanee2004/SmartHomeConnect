@@ -9,28 +9,35 @@ class CustomTextField extends StatelessWidget {
     this.obscure = false,
     required this.icon,
     this.controller,
+    this.focusNode,
     this.keyboardType,
     this.textInputAction,
     this.onChanged,
     this.onSubmitted,
     this.suffix,
+    this.semanticsLabel,
   });
 
   final String hint;
   final bool obscure;
   final IconData icon;
   final TextEditingController? controller;
+  final FocusNode? focusNode;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final Widget? suffix;
+  final String? semanticsLabel;
+
+  static const double _radius = 14;
 
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
-    return TextField(
+    final field = TextField(
       controller: controller,
+      focusNode: focusNode,
       obscureText: obscure,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
@@ -49,18 +56,24 @@ class CustomTextField extends StatelessWidget {
         fillColor: c.inputFill,
         contentPadding: const EdgeInsets.symmetric(vertical: 18),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(_radius),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: accentColor, width: 1),
+          borderRadius: BorderRadius.circular(_radius),
+          borderSide: const BorderSide(color: borderSubtle, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: accentColor, width: 2),
+          borderRadius: BorderRadius.circular(_radius),
+          borderSide: const BorderSide(color: primaryColor, width: 1.5),
         ),
       ),
+    );
+    if (semanticsLabel == null) return field;
+    return Semantics(
+      textField: true,
+      label: semanticsLabel,
+      child: field,
     );
   }
 }

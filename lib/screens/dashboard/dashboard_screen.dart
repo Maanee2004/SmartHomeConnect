@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/models/device.dart';
+import 'package:smart_home/models/house_room.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
-import 'package:smart_home/screens/floor_plan/floor_plan_editor_screen.dart';
 import 'package:smart_home/services/auth_service.dart';
-import 'package:smart_home/services/device_service.dart';
+import 'package:smart_home/services/firestore_home_repository.dart';
+import 'package:smart_home/services/home_repository.dart';
+import 'package:smart_home/theme/room_icons.dart';
 import 'package:smart_home/widgets/device_card.dart';
+import 'package:smart_home/widgets/device_grid_skeleton.dart';
+import 'package:smart_home/widgets/load_error_view.dart';
+import 'package:smart_home/widgets/theme_toggle_button.dart';
 
-/// Tableau de bord : en-tête avec le nom via [AuthService], grille devices Firestore.
+/// Accueil : appareils filtrés par pièce (défaut **Salon**), sélection via menu ⋮.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -17,7 +22,760 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const _service = DeviceService();
+  static final HomeRepository _repo = FirestoreHomeRepository();
+
+  /// `true` = afficher tous les appareils, titre « Toute la maison ».
+  bool _allHouse = false;
+
+  /// Pièce explicitement choisie dans le menu ; `null` = règle par défaut (Salon ou 1ʳᵉ pièce).
+  String? _pickedRoomId;
+
+  String _effectiveRoomId(List<HouseRoom> rooms) {
+    if (rooms.isEmpty) return '';
+    if (_pickedRoomId != null && rooms.any((r) => r.id == _pickedRoomId)) {
+      return _pickedRoomId!;
+    }
+    for (final r in rooms) {
+      if (r.name.toLowerCase().trim() == 'salon') return r.id;
+    }
+    return rooms.first.id;
+  }
+
+  String _appBarTitle(List<HouseRoom> rooms, bool firebaseReady) {
+    if (!firebaseReady) return 'Smart Home';
+    if (rooms.isEmpty) return 'Ma maison';
+    if (_allHouse) return 'Toute la maison';
+    final id = _effectiveRoomId(rooms);
+    for (final r in rooms) {
+      if (r.id == id) return r.name;
+    }
+    return 'Salon';
+  }
+
+  List<Device> _filteredDevices(List<Device> all, List<HouseRoom> rooms) {
+    if (_allHouse) return all;
+    final id = _effectiveRoomId(rooms);
+    if (id.isEmpty) return [];
+    return all.where((d) => d.roomId == id).toList();
+  }
+
+  Future<void> _onDashboardPullRefresh() async {
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showRoomPicker(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    final sorted = [...rooms]..sort((a, b) => a.name.compareTo(b.name));
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: textSecondary.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Afficher les appareils',
+                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                          color: textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.55,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ListTile(
+                      leading:
+                          Icon(Icons.home_work_outlined, color: accentColor),
+                      title: const Text(
+                        'Toute la maison',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() {
+                          _allHouse = true;
+                          _pickedRoomId = null;
+                        });
+                      },
+                      trailing: _allHouse
+                          ? Icon(Icons.check_rounded, color: accentColor)
+                          : null,
+                    ),
+                    const Divider(height: 1),
+                    ...sorted.map(
+                      (r) => ListTile(
+                        leading: Icon(
+                          roomIconFromName(r.name),
+                          color: textSecondary,
+                        ),
+                        title: Text(
+                          r.name,
+                          style: const TextStyle(color: textPrimary),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!_allHouse &&
+                                _effectiveRoomId(rooms) == r.id)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Icon(
+                                  Icons.check_rounded,
+                                  color: accentColor,
+                                ),
+                              ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.delete_outline_rounded,
+                                color: errorColor.withValues(alpha: 0.9),
+                                size: 22,
+                              ),
+                              tooltip: 'Supprimer la pièce',
+                              onPressed: () async {
+                                await _confirmDeleteRoom(
+                                  sheetContext: ctx,
+                                  messengerContext: context,
+                                  room: r,
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          setState(() {
+                            _allHouse = false;
+                            _pickedRoomId = r.id;
+                          });
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading:
+                          Icon(Icons.add_circle_outline, color: accentColor),
+                      title: const Text(
+                        'Ajouter une pièce',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _promptAddRoom(context);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _promptAddRoom(BuildContext context) async {
+    final controller = TextEditingController();
+    String? name;
+    try {
+      name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: cardColor,
+          title: const Text(
+            'Nouvelle pièce',
+            style: TextStyle(color: textPrimary),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: const TextStyle(color: textPrimary),
+            decoration: const InputDecoration(
+              hintText: 'Nom de la pièce',
+              hintStyle: TextStyle(color: textSecondary),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final t = controller.text.trim();
+                Navigator.pop(ctx, t.isEmpty ? null : t);
+              },
+              child: const Text('Ajouter'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+    if (name == null || name.isEmpty) return;
+    try {
+      final id = await _repo.addRoom(name);
+      if (context.mounted) {
+        final suffix = id.isEmpty ? '' : ' (id: $id)';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pièce « $name » ajoutée.$suffix')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteDevice(BuildContext context, Device device) async {
+    if (!Firebase.apps.isNotEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cardColor,
+        title: Text(
+          'Supprimer « ${device.name} » ?',
+          style: const TextStyle(color: textPrimary),
+        ),
+        content: const Text(
+          'L’appareil sera retiré de Firestore.',
+          style: TextStyle(color: textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await _repo.deleteDevice(device.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('« ${device.name} » supprimé.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteRoom({
+    required BuildContext sheetContext,
+    required BuildContext messengerContext,
+    required HouseRoom room,
+  }) async {
+    if (!Firebase.apps.isNotEmpty) return;
+    final ok = await showDialog<bool>(
+      context: sheetContext,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cardColor,
+        title: Text(
+          'Supprimer « ${room.name} » ?',
+          style: const TextStyle(color: textPrimary),
+        ),
+        content: const Text(
+          'La pièce et tous ses appareils seront retirés de Firestore.',
+          style: TextStyle(color: textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _repo.deleteRoom(room.id);
+      if (!messengerContext.mounted) return;
+      if (sheetContext.mounted) {
+        Navigator.pop(sheetContext);
+      }
+      setState(() {
+        if (_pickedRoomId == room.id) _pickedRoomId = null;
+      });
+      ScaffoldMessenger.of(messengerContext).showSnackBar(
+        SnackBar(content: Text('Pièce « ${room.name} » supprimée.')),
+      );
+    } catch (e) {
+      if (messengerContext.mounted) {
+        ScaffoldMessenger.of(messengerContext).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _pickRoomForDevice(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    final sorted = [...rooms]..sort((a, b) => a.name.compareTo(b.name));
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: textSecondary.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Placer dans quelle pièce ?',
+                  style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                        color: textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.45,
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                children: sorted
+                    .map(
+                      (r) => ListTile(
+                        leading: Icon(
+                          roomIconFromName(r.name),
+                          color: textSecondary,
+                        ),
+                        title: Text(
+                          r.name,
+                          style: const TextStyle(color: textPrimary),
+                        ),
+                        onTap: () => Navigator.pop(ctx, r.id),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _resolveTargetRoomId(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    if (rooms.isEmpty) return null;
+    if (!_allHouse) return _effectiveRoomId(rooms);
+    return _pickRoomForDevice(context, rooms);
+  }
+
+  Future<void> _addQuickDevice(
+    BuildContext context,
+    List<HouseRoom> rooms, {
+    required String name,
+    required String type,
+    Map<String, dynamic>? initialState,
+  }) async {
+    final roomId = await _resolveTargetRoomId(context, rooms);
+    if (roomId == null || !context.mounted) return;
+    try {
+      final devId = await _repo.addDevice(
+        roomId: roomId,
+        name: name,
+        type: type,
+        initialState: initialState,
+      );
+      if (context.mounted) {
+        final suffix = devId.isEmpty ? '' : ' (id: $devId)';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('« $name » ajouté.$suffix')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showAddDeviceSheet(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: textSecondary.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Ajouter un appareil',
+                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                          color: textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ),
+              if (_allHouse)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Tu affiches « Toute la maison » : on te demandera la pièce pour chaque ajout.',
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: textSecondary,
+                          ),
+                    ),
+                  ),
+                ),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.55,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ListTile(
+                      leading:
+                          Icon(Icons.lightbulb_outline, color: accentColor),
+                      title: const Text(
+                        'Lampe',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Éclairage ON/OFF',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(context, rooms,
+                            name: 'Lampe', type: 'LIGHT');
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.air_rounded, color: accentColor),
+                      title: const Text(
+                        'Ventilateur',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Allumage + vitesse',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(context, rooms,
+                            name: 'Ventilateur', type: 'FAN');
+                      },
+                    ),
+                    ListTile(
+                      leading:
+                          Icon(Icons.thermostat_rounded, color: accentColor),
+                      title: const Text(
+                        'Thermomètre',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Température',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(
+                          context,
+                          rooms,
+                          name: 'Thermomètre',
+                          type: 'SENSOR_TEMP',
+                          initialState: const {'temperature': 20.0},
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.power_rounded, color: accentColor),
+                      title: const Text(
+                        'Prise',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Prise connectée',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(context, rooms,
+                            name: 'Prise', type: 'OUTLET');
+                      },
+                    ),
+                    ListTile(
+                      leading:
+                          Icon(Icons.videocam_outlined, color: accentColor),
+                      title: const Text(
+                        'Caméra',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Flux ON/OFF',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(context, rooms,
+                            name: 'Caméra', type: 'CAMERA');
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: Icon(Icons.tune_rounded, color: accentColor),
+                      title: const Text(
+                        'Ajouter un appareil personnalisé…',
+                        style: TextStyle(color: textPrimary),
+                      ),
+                      subtitle: const Text(
+                        'Nom, type et pièce au choix',
+                        style: TextStyle(color: textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _promptCustomDevice(context, rooms);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _promptCustomDevice(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    final nameCtrl = TextEditingController();
+    var type = 'LIGHT';
+    var roomId = _effectiveRoomId(rooms);
+    final sorted = [...rooms]..sort((a, b) => a.name.compareTo(b.name));
+
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setSt) {
+            return AlertDialog(
+              backgroundColor: cardColor,
+              title: const Text(
+                'Appareil personnalisé',
+                style: TextStyle(color: textPrimary),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      autofocus: true,
+                      style: const TextStyle(color: textPrimary),
+                      decoration: const InputDecoration(
+                        labelText: 'Nom',
+                        labelStyle: TextStyle(color: textSecondary),
+                        hintText: 'ex. Lampe bureau',
+                        hintStyle: TextStyle(color: textSecondary),
+                      ),
+                    ),
+                    const Text(
+                      'Type',
+                      style: TextStyle(color: textSecondary, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    DropdownButton<String>(
+                      value: type,
+                      isExpanded: true,
+                      dropdownColor: cardColor,
+                      style: const TextStyle(color: textPrimary),
+                      items: const [
+                        DropdownMenuItem(value: 'LIGHT', child: Text('Lampe')),
+                        DropdownMenuItem(
+                          value: 'FAN',
+                          child: Text('Ventilateur'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'SENSOR_TEMP',
+                          child: Text('Thermomètre'),
+                        ),
+                        DropdownMenuItem(value: 'OUTLET', child: Text('Prise')),
+                        DropdownMenuItem(
+                          value: 'CAMERA',
+                          child: Text('Caméra'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setSt(() => type = v);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Pièce',
+                      style: TextStyle(color: textSecondary, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    DropdownButton<String>(
+                      value: sorted.any((r) => r.id == roomId)
+                          ? roomId
+                          : sorted.first.id,
+                      isExpanded: true,
+                      dropdownColor: cardColor,
+                      style: const TextStyle(color: textPrimary),
+                      items: sorted
+                          .map(
+                            (r) => DropdownMenuItem(
+                              value: r.id,
+                              child: Text(r.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setSt(() => roomId = v);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Ajouter'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (ok != true || !context.mounted) return;
+      final name = nameCtrl.text.trim();
+      if (name.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Indique un nom.')),
+        );
+        return;
+      }
+      try {
+        final devId = await _repo.addDevice(
+          roomId: roomId,
+          name: name,
+          type: type,
+        );
+        if (context.mounted) {
+          final suffix = devId.isEmpty ? '' : ' (id: $devId)';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('« $name » ajouté.$suffix')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Échec: $e')),
+          );
+        }
+      }
+    } finally {
+      nameCtrl.dispose();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,39 +786,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.wifi_rounded,
-              color: accentColor,
-              size: 26,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Smart Home',
-              style: TextStyle(
-                color: Colors.white,
+        title: StreamBuilder<List<HouseRoom>>(
+          stream: firebaseReady
+              ? _repo.watchRooms()
+              : Stream.value(const <HouseRoom>[]),
+          initialData: const <HouseRoom>[],
+          builder: (context, snap) {
+            final rooms = snap.data ?? const <HouseRoom>[];
+            return Text(
+              _appBarTitle(rooms, firebaseReady),
+              style: const TextStyle(
+                color: textPrimary,
                 fontWeight: FontWeight.w600,
               ),
-            ),
-          ],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
         ),
         actions: [
-          IconButton(
-            tooltip: 'Plan 2D de la maison',
-            icon: const Icon(Icons.home_work_outlined, color: Colors.white70),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const FloorPlanEditorScreen(),
-                ),
+          const ThemeToggleButton(),
+          StreamBuilder<List<HouseRoom>>(
+            stream: firebaseReady
+                ? _repo.watchRooms()
+                : Stream.value(const <HouseRoom>[]),
+            initialData: const <HouseRoom>[],
+            builder: (context, snap) {
+              final rooms = snap.data ?? const <HouseRoom>[];
+              return IconButton(
+                tooltip: 'Ajouter un appareil',
+                icon: Icon(Icons.add_rounded, color: textSecondary),
+                onPressed: !firebaseReady || rooms.isEmpty
+                    ? null
+                    : () => _showAddDeviceSheet(context, rooms),
+              );
+            },
+          ),
+          StreamBuilder<List<HouseRoom>>(
+            stream: firebaseReady
+                ? _repo.watchRooms()
+                : Stream.value(const <HouseRoom>[]),
+            initialData: const <HouseRoom>[],
+            builder: (context, snap) {
+              final rooms = snap.data ?? const <HouseRoom>[];
+              return IconButton(
+                tooltip: 'Choisir la pièce',
+                icon: Icon(Icons.more_vert_rounded, color: textSecondary),
+                onPressed: !firebaseReady || rooms.isEmpty
+                    ? null
+                    : () => _showRoomPicker(context, rooms),
               );
             },
           ),
           IconButton(
             tooltip: 'Se déconnecter',
-            icon: const Icon(Icons.logout_rounded, color: Colors.white70),
+            icon: Icon(Icons.logout_rounded, color: textSecondary),
             onPressed: () {
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -74,119 +854,346 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _DashboardHeader(),
-            const SizedBox(height: 6),
+            const _DashboardHeader(),
+            const SizedBox(height: 10),
             Text(
-              'Tes appareils en temps réel',
+              'Ma maison',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  firebaseReady ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                  color: firebaseReady ? accentColor : textSecondary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  firebaseReady ? 'Connecté' : 'Non connecté',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: firebaseReady ? accentColor : textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Utilise le menu ⋮ pour choisir la pièce et le bouton + pour les appareils',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: textSecondary,
                   ),
             ),
             const SizedBox(height: 12),
-            if (!firebaseReady) ...[
-              Text(
-                "Firebase n'est pas initialisé. Les devices ne peuvent pas se charger.",
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.redAccent),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Vérifie `lib/firebase_options.dart` et `Firebase.initializeApp(...)`.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: textSecondary),
-              ),
-              const SizedBox(height: 10),
-            ],
             Expanded(
-              child: StreamBuilder<List<Map<String, dynamic>>>(
-                stream: _service.getDevicesStream(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Erreur Firestore: ${snapshot.error}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: Colors.redAccent),
-                          textAlign: TextAlign.center,
+              child: !firebaseReady
+                  ? RefreshIndicator(
+                      onRefresh: _onDashboardPullRefresh,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: MediaQuery.sizeOf(context).height - 320,
+                          ),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.cloud_off_outlined,
+                                    size: 56,
+                                    color: textSecondary.withValues(alpha: 0.85),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Firebase n’est pas initialisé.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(color: textPrimary),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Configure le projet (flutterfire configure) puis relance l’app.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    );
-                  }
-
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final devices = snapshot.data ?? const [];
-
-                  if (devices.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Aucun device dans Firestore.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: Colors.white),
-                          ),
-                          const SizedBox(height: 10),
-                          FilledButton.tonal(
-                            onPressed: () async {
-                              try {
-                                await FirebaseFirestore.instance
-                                    .collection('devices')
-                                    .add({
-                                  'name': 'Lampe salon',
-                                  'state': false,
-                                });
-                              } catch (e) {
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Échec ajout device: $e'),
+                    )
+                  : StreamBuilder<List<HouseRoom>>(
+                      stream: _repo.watchRooms(),
+                      builder: (context, roomSnap) {
+                        if (roomSnap.hasError) {
+                          return LoadErrorView(
+                            message: '${roomSnap.error}',
+                            onRetry: () => setState(() {}),
+                          );
+                        }
+                        if (roomSnap.connectionState ==
+                                ConnectionState.waiting &&
+                            !roomSnap.hasData) {
+                          return RefreshIndicator(
+                            onRefresh: _onDashboardPullRefresh,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return SingleChildScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight: constraints.maxHeight,
+                                    ),
+                                    child: const Padding(
+                                      padding: EdgeInsets.only(top: 28),
+                                      child: DeviceGridSkeleton(itemCount: 4),
+                                    ),
                                   ),
                                 );
-                              }
-                            },
-                            child: const Text('Ajouter un device de test'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+                              },
+                            ),
+                          );
+                        }
 
-                  return GridView.builder(
-                    itemCount: devices.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 1,
+                        return StreamBuilder<List<Device>>(
+                          stream: _repo.watchDevices(),
+                          builder: (context, devSnap) {
+                            if (devSnap.hasError) {
+                              return LoadErrorView(
+                                message: '${devSnap.error}',
+                                onRetry: () => setState(() {}),
+                              );
+                            }
+                            final rooms =
+                                roomSnap.data ?? const <HouseRoom>[];
+                            final devices =
+                                devSnap.data ?? const <Device>[];
+
+                            if (rooms.isEmpty) {
+                              return RefreshIndicator(
+                                onRefresh: _onDashboardPullRefresh,
+                                child: SingleChildScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight:
+                                          MediaQuery.sizeOf(context).height -
+                                              320,
+                                    ),
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(24),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.meeting_room_outlined,
+                                              size: 56,
+                                              color: textSecondary
+                                                  .withValues(alpha: 0.9),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              'Aucune pièce pour l’instant.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    color: textPrimary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Ajoute une pièce depuis le menu ⋮ ou charge les données de démo.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyMedium
+                                                  ?.copyWith(
+                                                    color: textSecondary,
+                                                  ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 22),
+                                            FilledButton.tonal(
+                                              onPressed: firebaseReady
+                                                  ? () async {
+                                                      try {
+                                                        await FirestoreHomeRepository
+                                                            .seedDemoHome();
+                                                        if (context.mounted) {
+                                                          ScaffoldMessenger.of(
+                                                                  context)
+                                                              .showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text(
+                                                                'Données de démo ajoutées.',
+                                                              ),
+                                                            ),
+                                                          );
+                                                        }
+                                                      } catch (e) {
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
+                                                        ScaffoldMessenger.of(
+                                                                context)
+                                                            .showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                                'Échec: $e'),
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  : null,
+                                              child: const Text(
+                                                'Créer des données de démo (Firestore)',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final waitingDevices = devSnap.connectionState ==
+                                    ConnectionState.waiting &&
+                                devSnap.data == null;
+                            if (waitingDevices) {
+                              return RefreshIndicator(
+                                onRefresh: _onDashboardPullRefresh,
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return SingleChildScrollView(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minHeight: constraints.maxHeight,
+                                        ),
+                                        child: const Padding(
+                                          padding: EdgeInsets.only(top: 28),
+                                          child:
+                                              DeviceGridSkeleton(itemCount: 4),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            }
+
+                            final filtered =
+                                _filteredDevices(devices, rooms);
+                            if (filtered.isEmpty) {
+                              return RefreshIndicator(
+                                onRefresh: _onDashboardPullRefresh,
+                                child: SingleChildScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight:
+                                          MediaQuery.sizeOf(context).height -
+                                              320,
+                                    ),
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(24),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.devices_other_rounded,
+                                              size: 52,
+                                              color: textSecondary
+                                                  .withValues(alpha: 0.85),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              _allHouse
+                                                  ? 'Aucun appareil dans la maison.'
+                                                  : 'Aucun appareil dans cette pièce.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    color: textPrimary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Utilise le bouton + pour en ajouter un.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: textSecondary,
+                                                  ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return RefreshIndicator(
+                              onRefresh: _onDashboardPullRefresh,
+                              child: GridView.builder(
+                                physics:
+                                    const AlwaysScrollableScrollPhysics(),
+                                itemCount: filtered.length,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  childAspectRatio: 0.78,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final d = filtered[index];
+                                  return DeviceCard(
+                                    device: d,
+                                    onCommand: (patch) => _repo
+                                        .sendDeviceCommand(d.id, patch),
+                                    onDelete: firebaseReady
+                                        ? () =>
+                                            _confirmDeleteDevice(context, d)
+                                        : null,
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
-                    itemBuilder: (context, index) {
-                      final d = devices[index];
-                      final id = d['id'] as String;
-                      final name = (d['name'] as String?) ?? 'Device';
-                      final state = (d['state'] as bool?) ?? false;
-                      return DeviceCard(
-                        name: name,
-                        state: state,
-                        onTap: () => _service.toggleDevice(id, state),
-                      );
-                    },
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -195,16 +1202,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-/// En-tête : « Bonjour [nom] » depuis [AuthService] (prefs après login / inscription).
 class _DashboardHeader extends StatelessWidget {
+  const _DashboardHeader();
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<String?>(
       stream: AuthService.instance.userNameStream(),
       builder: (context, snap) {
         final raw = snap.data?.trim();
-        final name =
-            (raw == null || raw.isEmpty) ? 'Utilisateur' : raw;
+        final name = (raw == null || raw.isEmpty) ? 'Utilisateur' : raw;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -219,7 +1226,7 @@ class _DashboardHeader extends StatelessWidget {
             Text(
               name,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
+                    color: textPrimary,
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -229,8 +1236,11 @@ class _DashboardHeader extends StatelessWidget {
               width: 48,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(2),
-                gradient: const LinearGradient(
-                  colors: [accentColor, primaryColor],
+                gradient: LinearGradient(
+                  colors: [
+                    primaryColor,
+                    Color.lerp(primaryColor, Colors.black, 0.18)!,
+                  ],
                 ),
               ),
             ),
