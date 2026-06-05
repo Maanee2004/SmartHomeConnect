@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/models/device.dart';
-import 'package:smart_home/services/firestore_layout.dart';
+import 'package:smart_home/services/firestore_schema.dart';
 import 'package:smart_home/widgets/device_card.dart';
 
 class LedRealtimeScreen extends StatefulWidget {
@@ -17,7 +17,7 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
 
   DocumentReference<Map<String, dynamic>> get _ledDoc =>
       FirebaseFirestore.instance
-          .collection(FirestorePaths.kDefaultHomeId)
+          .collection(FirestoreSchema.appareilsCollection)
           .doc('led_status');
 
   Future<void> _setEtat(int nextEtat) async {

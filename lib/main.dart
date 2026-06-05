@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/firebase_options.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
+import 'package:smart_home/screens/home/home_shell_screen.dart';
+import 'package:smart_home/services/auth_service.dart';
 import 'package:smart_home/services/firestore_home_repository.dart';
+import 'package:smart_home/services/user_preferences_service.dart';
 import 'theme/app_theme_scope.dart';
 import 'theme/custom_theme.dart';
 import 'package:smart_home/widgets/offline_banner.dart';
@@ -16,15 +20,17 @@ Future<void> main() async {
     );
   } catch (_) {
     // Sur Web, Firebase nécessite des options (flutterfire configure).
-    // On laisse l'app se lancer quand même pour éviter l'écran blanc.
   }
   try {
     if (Firebase.apps.isNotEmpty) {
-      await FirestoreHomeRepository.instance.ensureLayoutResolved();
+      await FirestoreHomeRepository.bootstrap();
     }
-  } catch (_) {
-    // Détection Firestore : échec → résolution au premier watchRooms / watchDevices.
+  } catch (e, st) {
+    // ignore: avoid_print
+    print('[Firestore] bootstrap: $e\n$st');
   }
+  await AuthService.instance.initSession();
+  await UserPreferencesService.instance.init();
   runApp(const MyApp());
 }
 
@@ -36,15 +42,20 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final ValueNotifier<ThemeMode> _themeMode = ValueNotifier(ThemeMode.dark);
+  final _prefs = UserPreferencesService.instance;
 
-  /// Thèmes mis en cache pour éviter un recalcul lourd à chaque bascule clair/sombre.
-  late final ThemeData _lightTheme = CustomTheme.lightTheme();
-  late final ThemeData _darkTheme = CustomTheme.darkTheme();
+  @override
+  void initState() {
+    super.initState();
+    _prefs.notifier.addListener(_onPrefsChanged);
+    _applyOverlay(_prefs.prefs.themeMode);
+  }
+
+  void _onPrefsChanged() => _applyOverlay(_prefs.prefs.themeMode);
 
   @override
   void dispose() {
-    _themeMode.dispose();
+    _prefs.notifier.removeListener(_onPrefsChanged);
     super.dispose();
   }
 
@@ -67,32 +78,53 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return AppThemeModeScope(
-      notifier: _themeMode,
+      notifier: _prefs.themeModeNotifier,
       child: ListenableBuilder(
-        listenable: _themeMode,
+        listenable: _prefs.notifier,
         builder: (context, _) {
-          final mode = _themeMode.value;
-          _applyOverlay(mode);
-          SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.edgeToEdge,
-            overlays: const [],
-          );
+          final p = _prefs.prefs;
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'Smart Home',
-            theme: _lightTheme,
-            darkTheme: _darkTheme,
-            themeMode: mode,
+            locale: p.locale,
+            supportedLocales: const [
+              Locale('fr'),
+              Locale('en'),
+              Locale('ar'),
+            ],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            theme: CustomTheme.lightTheme(fontFamily: p.fontFamily),
+            darkTheme: CustomTheme.darkTheme(fontFamily: p.fontFamily),
+            themeMode: p.themeMode,
+            themeAnimationDuration: Duration.zero,
+            themeAnimationCurve: Curves.linear,
             builder: (context, child) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const OfflineBanner(),
-                  Expanded(child: child ?? const SizedBox.shrink()),
-                ],
+              final scaled = MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(p.fontScale),
+              );
+              return MediaQuery(
+                data: scaled,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const OfflineBanner(),
+                    Expanded(child: child ?? const SizedBox.shrink()),
+                  ],
+                ),
               );
             },
-            home: const LoginScreen(),
+            home: ListenableBuilder(
+              listenable: AuthService.instance.authNotifier,
+              builder: (context, _) {
+                return AuthService.instance.isLoggedIn
+                    ? const HomeShellScreen()
+                    : const LoginScreen();
+              },
+            ),
           );
         },
       ),

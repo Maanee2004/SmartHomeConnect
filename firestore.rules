@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read, write: if true;
+      match /rfidCards/{cardId} {
+        allow read, write: if true;
+      }
+      match /preferences/{docId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /appareils/{appareilId} {
+      allow read, write: if true;
+    }
+
+    match /accessLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    match /alerts/{alertId} {
+      allow read, write: if true;
+    }
+  }
+}

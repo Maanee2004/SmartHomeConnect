@@ -148,5 +148,53 @@ ledRef.onSnapshot(
   (err) => console.error("[Firestore] snapshot error", err)
 );
 
-console.log("[Bridge] running (Firestore <-> MQTT)");
+const topicGpio = process.env.MQTT_TOPIC_GPIO || "maison/gpio";
+const appareilsCol = db.collection("appareils");
+const lastValeurByDoc = new Map();
+
+appareilsCol.onSnapshot(
+  async (snap) => {
+    for (const change of snap.docChanges()) {
+      if (change.type === "removed") {
+        lastValeurByDoc.delete(change.doc.id);
+        continue;
+      }
+      const data = change.doc.data() || {};
+      const pinRaw = data.pin;
+      const valeur = data.valeur;
+      if (pinRaw == null || valeur == null) continue;
+      const pin = Number(pinRaw);
+      if (!Number.isFinite(pin)) continue;
+
+      const key = change.doc.id;
+      const prev = lastValeurByDoc.get(key);
+      const serialized =
+        typeof valeur === "number" ? valeur : JSON.stringify(valeur);
+      if (prev != null && prev.pin === pin && prev.valeur === serialized) continue;
+      lastValeurByDoc.set(key, { pin, valeur: serialized });
+
+      const payload = JSON.stringify({
+        id: change.doc.id,
+        pin,
+        valeur,
+        type: data.type,
+        categorie: data.categorie,
+      });
+      client.publish(topicGpio, payload, { qos: 1, retain: false }, (err) => {
+        if (err) console.error("[MQTT] gpio publish error", err);
+        else console.log(`[MQTT] ${topicGpio} -> ${payload}`);
+      });
+      await logHistory({
+        source: "firestore",
+        type: "appareil",
+        id: change.doc.id,
+        pin,
+        valeur,
+      });
+    }
+  },
+  (err) => console.error("[Firestore] appareils error", err)
+);
+
+console.log("[Bridge] running (Firestore <-> MQTT, appareils ->", topicGpio, ")");
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/models/device.dart';
 import 'package:smart_home/models/house_room.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
@@ -15,7 +16,14 @@ import 'package:smart_home/widgets/theme_toggle_button.dart';
 
 /// Accueil : appareils filtrés par pièce (défaut **Salon**), sélection via menu ⋮.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({
+    super.key,
+    this.bottomNavigationBar,
+    this.onGoHome,
+  });
+
+  final Widget? bottomNavigationBar;
+  final VoidCallback? onGoHome;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -72,7 +80,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -86,7 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: textSecondary.withValues(alpha: 0.35),
+                  color: context.smartColors.textSecondary.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -98,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Text(
                     'Afficher les appareils',
                     style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                          color: textPrimary,
+                          color: context.smartColors.textPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -115,9 +122,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading:
                           Icon(Icons.home_work_outlined, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Toute la maison',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       onTap: () {
                         Navigator.pop(ctx);
@@ -135,11 +142,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       (r) => ListTile(
                         leading: Icon(
                           roomIconFromName(r.name),
-                          color: textSecondary,
+                          color: context.smartColors.textSecondary,
                         ),
                         title: Text(
                           r.name,
-                          style: const TextStyle(color: textPrimary),
+                          style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -183,9 +190,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading:
                           Icon(Icons.add_circle_outline, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Ajouter une pièce',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -210,31 +217,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       name = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: cardColor,
-          title: const Text(
+          title: Text(
             'Nouvelle pièce',
-            style: TextStyle(color: textPrimary),
+            style: TextStyle(color: context.smartColors.textPrimary),
           ),
           content: TextField(
             controller: controller,
             autofocus: true,
-            style: const TextStyle(color: textPrimary),
-            decoration: const InputDecoration(
+            style: TextStyle(color: context.smartColors.textPrimary),
+            decoration: InputDecoration(
               hintText: 'Nom de la pièce',
-              hintStyle: TextStyle(color: textSecondary),
+              hintStyle: TextStyle(color: context.smartColors.textSecondary),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Annuler'),
+              child: Text('Annuler'),
             ),
             FilledButton(
               onPressed: () {
                 final t = controller.text.trim();
                 Navigator.pop(ctx, t.isEmpty ? null : t);
               },
-              child: const Text('Ajouter'),
+              child: Text('Ajouter'),
             ),
           ],
         ),
@@ -265,24 +271,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: cardColor,
         title: Text(
           'Supprimer « ${device.name} » ?',
-          style: const TextStyle(color: textPrimary),
+          style: TextStyle(color: context.smartColors.textPrimary),
         ),
-        content: const Text(
+        content: Text(
           'L’appareil sera retiré de Firestore.',
-          style: TextStyle(color: textSecondary),
+          style: TextStyle(color: context.smartColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
+            child: Text('Annuler'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Supprimer'),
+            child: Text('Supprimer'),
           ),
         ],
       ),
@@ -313,24 +318,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final ok = await showDialog<bool>(
       context: sheetContext,
       builder: (ctx) => AlertDialog(
-        backgroundColor: cardColor,
         title: Text(
           'Supprimer « ${room.name} » ?',
-          style: const TextStyle(color: textPrimary),
+          style: TextStyle(color: context.smartColors.textPrimary),
         ),
-        content: const Text(
+        content: Text(
           'La pièce et tous ses appareils seront retirés de Firestore.',
-          style: TextStyle(color: textSecondary),
+          style: TextStyle(color: context.smartColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
+            child: Text('Annuler'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Supprimer'),
+            child: Text('Supprimer'),
           ),
         ],
       ),
@@ -364,7 +368,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final sorted = [...rooms]..sort((a, b) => a.name.compareTo(b.name));
     return showModalBottomSheet<String>(
       context: context,
-      backgroundColor: cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -377,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: textSecondary.withValues(alpha: 0.35),
+                color: context.smartColors.textSecondary.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -388,7 +391,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Text(
                   'Placer dans quelle pièce ?',
                   style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                        color: textPrimary,
+                        color: context.smartColors.textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
@@ -405,11 +408,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       (r) => ListTile(
                         leading: Icon(
                           roomIconFromName(r.name),
-                          color: textSecondary,
+                          color: context.smartColors.textSecondary,
                         ),
                         title: Text(
                           r.name,
-                          style: const TextStyle(color: textPrimary),
+                          style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         onTap: () => Navigator.pop(ctx, r.id),
                       ),
@@ -471,7 +474,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
@@ -485,7 +487,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: textSecondary.withValues(alpha: 0.35),
+                  color: context.smartColors.textSecondary.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -496,7 +498,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Text(
                     'Ajouter un appareil',
                     style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                          color: textPrimary,
+                          color: context.smartColors.textPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                   ),
@@ -510,7 +512,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Text(
                       'Tu affiches « Toute la maison » : on te demandera la pièce pour chaque ajout.',
                       style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                            color: textSecondary,
+                            color: context.smartColors.textSecondary,
                           ),
                     ),
                   ),
@@ -525,13 +527,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading:
                           Icon(Icons.lightbulb_outline, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Lampe',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Éclairage ON/OFF',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -541,13 +543,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     ListTile(
                       leading: Icon(Icons.air_rounded, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Ventilateur',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Allumage + vitesse',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -558,13 +560,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading:
                           Icon(Icons.thermostat_rounded, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Thermomètre',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Température',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -579,13 +581,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     ListTile(
                       leading: Icon(Icons.power_rounded, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Prise',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Prise connectée',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -596,13 +598,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading:
                           Icon(Icons.videocam_outlined, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Caméra',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Flux ON/OFF',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -613,13 +615,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const Divider(height: 1),
                     ListTile(
                       leading: Icon(Icons.tune_rounded, color: accentColor),
-                      title: const Text(
+                      title: Text(
                         'Ajouter un appareil personnalisé…',
-                        style: TextStyle(color: textPrimary),
+                        style: TextStyle(color: context.smartColors.textPrimary),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Nom, type et pièce au choix',
-                        style: TextStyle(color: textSecondary, fontSize: 12),
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
@@ -652,10 +654,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setSt) {
             return AlertDialog(
-              backgroundColor: cardColor,
-              title: const Text(
+              title: Text(
                 'Appareil personnalisé',
-                style: TextStyle(color: textPrimary),
+                style: TextStyle(color: context.smartColors.textPrimary),
               ),
               content: SingleChildScrollView(
                 child: Column(
@@ -665,24 +666,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     TextField(
                       controller: nameCtrl,
                       autofocus: true,
-                      style: const TextStyle(color: textPrimary),
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: context.smartColors.textPrimary),
+                      decoration: InputDecoration(
                         labelText: 'Nom',
-                        labelStyle: TextStyle(color: textSecondary),
+                        labelStyle: TextStyle(color: context.smartColors.textSecondary),
                         hintText: 'ex. Lampe bureau',
-                        hintStyle: TextStyle(color: textSecondary),
+                        hintStyle: TextStyle(color: context.smartColors.textSecondary),
                       ),
                     ),
-                    const Text(
+                    Text(
                       'Type',
-                      style: TextStyle(color: textSecondary, fontSize: 12),
+                      style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(height: 4),
                     DropdownButton<String>(
                       value: type,
                       isExpanded: true,
-                      dropdownColor: cardColor,
-                      style: const TextStyle(color: textPrimary),
+                      dropdownColor: context.smartColors.card,
+                      style: TextStyle(color: context.smartColors.textPrimary),
                       items: const [
                         DropdownMenuItem(value: 'LIGHT', child: Text('Lampe')),
                         DropdownMenuItem(
@@ -704,9 +705,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Pièce',
-                      style: TextStyle(color: textSecondary, fontSize: 12),
+                      style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(height: 4),
                     DropdownButton<String>(
@@ -714,8 +715,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ? roomId
                           : sorted.first.id,
                       isExpanded: true,
-                      dropdownColor: cardColor,
-                      style: const TextStyle(color: textPrimary),
+                      dropdownColor: context.smartColors.card,
+                      style: TextStyle(color: context.smartColors.textPrimary),
                       items: sorted
                           .map(
                             (r) => DropdownMenuItem(
@@ -734,11 +735,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Annuler'),
+                  child: Text('Annuler'),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Ajouter'),
+                  child: Text('Ajouter'),
                 ),
               ],
             );
@@ -782,7 +783,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final firebaseReady = Firebase.apps.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: bgColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -795,8 +795,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final rooms = snap.data ?? const <HouseRoom>[];
             return Text(
               _appBarTitle(rooms, firebaseReady),
-              style: const TextStyle(
-                color: textPrimary,
+              style: TextStyle(
+                color: context.smartColors.textPrimary,
                 fontWeight: FontWeight.w600,
               ),
               maxLines: 1,
@@ -815,7 +815,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final rooms = snap.data ?? const <HouseRoom>[];
               return IconButton(
                 tooltip: 'Ajouter un appareil',
-                icon: Icon(Icons.add_rounded, color: textSecondary),
+                icon: Icon(Icons.add_rounded, color: context.smartColors.textSecondary),
                 onPressed: !firebaseReady || rooms.isEmpty
                     ? null
                     : () => _showAddDeviceSheet(context, rooms),
@@ -831,7 +831,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final rooms = snap.data ?? const <HouseRoom>[];
               return IconButton(
                 tooltip: 'Choisir la pièce',
-                icon: Icon(Icons.more_vert_rounded, color: textSecondary),
+                icon: Icon(Icons.more_vert_rounded, color: context.smartColors.textSecondary),
                 onPressed: !firebaseReady || rooms.isEmpty
                     ? null
                     : () => _showRoomPicker(context, rooms),
@@ -840,7 +840,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           IconButton(
             tooltip: 'Se déconnecter',
-            icon: Icon(Icons.logout_rounded, color: textSecondary),
+            icon: Icon(Icons.logout_rounded, color: context.smartColors.textSecondary),
             onPressed: () {
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -849,6 +849,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: widget.bottomNavigationBar,
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Column(
@@ -859,7 +860,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               'Ma maison',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: textPrimary,
+                    color: context.smartColors.textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -885,7 +886,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               'Utilise le menu ⋮ pour choisir la pièce et le bouton + pour les appareils',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: textSecondary,
+                    color: context.smartColors.textSecondary,
                   ),
             ),
             const SizedBox(height: 12),
@@ -908,7 +909,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   Icon(
                                     Icons.cloud_off_outlined,
                                     size: 56,
-                                    color: textSecondary.withValues(alpha: 0.85),
+                                    color: context.smartColors.textSecondary.withValues(alpha: 0.85),
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
@@ -917,7 +918,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
-                                        ?.copyWith(color: textPrimary),
+                                        ?.copyWith(color: context.smartColors.textPrimary),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
@@ -926,7 +927,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodyMedium
-                                        ?.copyWith(color: textSecondary),
+                                        ?.copyWith(color: context.smartColors.textSecondary),
                                   ),
                                 ],
                               ),
@@ -1004,7 +1005,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.meeting_room_outlined,
                                               size: 56,
-                                              color: textSecondary
+                                              color: context.smartColors.textSecondary
                                                   .withValues(alpha: 0.9),
                                             ),
                                             const SizedBox(height: 16),
@@ -1014,7 +1015,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   .textTheme
                                                   .titleMedium
                                                   ?.copyWith(
-                                                    color: textPrimary,
+                                                    color: context.smartColors.textPrimary,
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                               textAlign: TextAlign.center,
@@ -1026,7 +1027,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   .textTheme
                                                   .bodyMedium
                                                   ?.copyWith(
-                                                    color: textSecondary,
+                                                    color: context.smartColors.textSecondary,
                                                   ),
                                               textAlign: TextAlign.center,
                                             ),
@@ -1063,7 +1064,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                       }
                                                     }
                                                   : null,
-                                              child: const Text(
+                                              child: Text(
                                                 'Créer des données de démo (Firestore)',
                                               ),
                                             ),
@@ -1126,7 +1127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             Icon(
                                               Icons.devices_other_rounded,
                                               size: 52,
-                                              color: textSecondary
+                                              color: context.smartColors.textSecondary
                                                   .withValues(alpha: 0.85),
                                             ),
                                             const SizedBox(height: 16),
@@ -1138,7 +1139,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   .textTheme
                                                   .titleMedium
                                                   ?.copyWith(
-                                                    color: textPrimary,
+                                                    color: context.smartColors.textPrimary,
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                               textAlign: TextAlign.center,
@@ -1150,7 +1151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   .textTheme
                                                   .bodySmall
                                                   ?.copyWith(
-                                                    color: textSecondary,
+                                                    color: context.smartColors.textSecondary,
                                                   ),
                                               textAlign: TextAlign.center,
                                             ),
@@ -1218,7 +1219,7 @@ class _DashboardHeader extends StatelessWidget {
             Text(
               'Bonjour',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: textSecondary,
+                    color: context.smartColors.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
             ),
@@ -1226,7 +1227,7 @@ class _DashboardHeader extends StatelessWidget {
             Text(
               name,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: textPrimary,
+                    color: context.smartColors.textPrimary,
                     fontWeight: FontWeight.w700,
                   ),
             ),

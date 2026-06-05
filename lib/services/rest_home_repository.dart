@@ -15,6 +15,12 @@ class RestHomeRepository implements HomeRepository {
   final Future<String?> Function() tokenProvider;
 
   @override
+  bool get usesCanonicalSchema => false;
+
+  @override
+  Future<List<int>> availablePins() async => [];
+
+  @override
   Stream<List<HouseRoom>> watchRooms() {
     return Stream<List<HouseRoom>>.error(
       UnimplementedError(
@@ -53,10 +59,19 @@ class RestHomeRepository implements HomeRepository {
     required String roomId,
     required String name,
     required String type,
+    int? pin,
+    String? categorie,
     Map<String, dynamic>? initialState,
   }) {
     return Future<String>.error(
       UnimplementedError('POST $baseUrl/devices — à implémenter.'),
+    );
+  }
+
+  @override
+  Future<void> updateDevicePin(String deviceId, int pin) {
+    return Future<void>.error(
+      UnimplementedError('PATCH $baseUrl/devices/$deviceId/pin — à implémenter.'),
     );
   }
 

@@ -1,100 +1,54 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smart_home/services/firestore_schema.dart';
 
-/// Schéma Firestore pour pièces / appareils (reprise des tests : racine plate ou sous `maison`).
-enum FirestoreRoomsDevicesLayout {
-  nestedUnderHome,
-  flatRoot,
-}
-
-/// Résolution des chemins : d’abord `/{homeId}/_data/rooms`, sinon `/rooms` à la racine.
+/// Chemins Firestore — schéma académique racine uniquement.
 class FirestorePaths {
-  FirestorePaths._({
-    required this.homeCollectionId,
-    required this.layout,
-  });
+  FirestorePaths._();
 
-  final String homeCollectionId;
-  final FirestoreRoomsDevicesLayout layout;
+  static final FirestorePaths instance = FirestorePaths._();
 
-  static const String dataDocumentId = '_data';
+  FirestoreFieldNames get fields =>
+      FirestoreFieldNames.of(FirestoreCollectionNaming.canonical);
 
-  static const bool kForceFlatRoot = bool.fromEnvironment(
-    'FIRESTORE_USE_FLAT_COLLECTIONS',
-    defaultValue: false,
-  );
-
-  /// Aligné bridge LED / MQTT (`FIRESTORE_HOME_ID`, défaut `maison`).
-  static const String kDefaultHomeId = String.fromEnvironment(
-    'FIRESTORE_HOME_ID',
-    defaultValue: 'maison',
-  );
-
-  static Future<FirestorePaths> detect(FirebaseFirestore db) async {
-    if (kForceFlatRoot) {
-      return FirestorePaths._(
-        homeCollectionId: kDefaultHomeId,
-        layout: FirestoreRoomsDevicesLayout.flatRoot,
+  static Future<FirestorePaths> detectWritable(FirebaseFirestore db) async {
+    final ref =
+        db.collection(FirestoreSchema.appareilsCollection).doc('_app_write_probe');
+    try {
+      await ref.set({
+        FirestoreSchema.fieldUserId: '_app_write_probe',
+        'piece': '_probe',
+        'valeur': 0,
+        'categorie': 'capteur',
+      });
+      await ref.delete();
+      return instance;
+    } on FirebaseException catch (e) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: e.code,
+        message:
+            'Collection /${FirestoreSchema.appareilsCollection} inaccessible : ${e.message}',
       );
     }
-    final nestedSnap = await db
-        .collection(kDefaultHomeId)
-        .doc(dataDocumentId)
-        .collection('rooms')
-        .limit(1)
-        .get();
-    if (nestedSnap.docs.isNotEmpty) {
-      return FirestorePaths._(
-        homeCollectionId: kDefaultHomeId,
-        layout: FirestoreRoomsDevicesLayout.nestedUnderHome,
-      );
-    }
-    final flatSnap = await db.collection('rooms').limit(1).get();
-    if (flatSnap.docs.isNotEmpty) {
-      return FirestorePaths._(
-        homeCollectionId: kDefaultHomeId,
-        layout: FirestoreRoomsDevicesLayout.flatRoot,
-      );
-    }
-    return FirestorePaths._(
-      homeCollectionId: kDefaultHomeId,
-      layout: FirestoreRoomsDevicesLayout.nestedUnderHome,
-    );
   }
 
-  static FirestorePaths fallbackWithoutFirebase() {
-    return FirestorePaths._(
-      homeCollectionId: kDefaultHomeId,
-      layout: FirestoreRoomsDevicesLayout.nestedUnderHome,
-    );
-  }
+  static FirestorePaths fallbackWithoutFirebase() => instance;
 
-  CollectionReference<Map<String, dynamic>> roomsRef(FirebaseFirestore db) {
-    switch (layout) {
-      case FirestoreRoomsDevicesLayout.flatRoot:
-        return db.collection('rooms');
-      case FirestoreRoomsDevicesLayout.nestedUnderHome:
-        return db
-            .collection(homeCollectionId)
-            .doc(dataDocumentId)
-            .collection('rooms');
-    }
-  }
+  CollectionReference<Map<String, dynamic>> appareilsRef(
+    FirebaseFirestore db,
+  ) =>
+      db.collection(FirestoreSchema.appareilsCollection);
 
-  CollectionReference<Map<String, dynamic>> devicesRef(FirebaseFirestore db) {
-    switch (layout) {
-      case FirestoreRoomsDevicesLayout.flatRoot:
-        return db.collection('devices');
-      case FirestoreRoomsDevicesLayout.nestedUnderHome:
-        return db
-            .collection(homeCollectionId)
-            .doc(dataDocumentId)
-            .collection('devices');
-    }
-  }
+  CollectionReference<Map<String, dynamic>> devicesRef(
+    FirebaseFirestore db,
+  ) =>
+      appareilsRef(db);
 
-  String get debugLabel => switch (layout) {
-        FirestoreRoomsDevicesLayout.flatRoot => 'flat:/rooms,/devices',
-        FirestoreRoomsDevicesLayout.nestedUnderHome =>
-          'nested:/$homeCollectionId/$dataDocumentId/{{rooms|devices}}',
-      };
+  String get debugLabel =>
+      '/${FirestoreSchema.appareilsCollection} + /${FirestoreSchema.usersCollection}';
+
+  static String get allPathsHint =>
+      '/users/{userId}, /users/{userId}/preferences/settings, '
+      '/users/{userId}/rfidCards, /${FirestoreSchema.appareilsCollection}, '
+      '/${FirestoreSchema.accessLogsCollection}, /${FirestoreSchema.alertsCollection}';
 }

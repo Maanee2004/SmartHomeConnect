@@ -10,6 +10,7 @@ class DeviceCard extends StatefulWidget {
     required this.device,
     required this.onCommand,
     this.onDelete,
+    this.onPinEdit,
   });
 
   final Device device;
@@ -17,6 +18,9 @@ class DeviceCard extends StatefulWidget {
 
   /// Si non null, affiche une action pour retirer l’appareil (ex. Firestore).
   final VoidCallback? onDelete;
+
+  /// Si non null, permet de modifier la broche GPIO.
+  final VoidCallback? onPinEdit;
 
   @override
   State<DeviceCard> createState() => _DeviceCardState();
@@ -110,6 +114,12 @@ class _DeviceCardState extends State<DeviceCard> {
                             color: errorColor,
                             fontSize: 12,
                           ),
+                        ),
+                      if (d.pin != null || d.expectsPin || widget.onPinEdit != null)
+                        _PinBadge(
+                          pin: d.pin,
+                          required: d.expectsPin,
+                          onEdit: widget.onPinEdit,
                         ),
                     ],
                   ),
@@ -246,6 +256,51 @@ class _DeviceCardState extends State<DeviceCard> {
             ),
           ],
         );
+      case 'RFID':
+        final detected = (d.valeur ?? 0) != 0;
+        final isGarage = d.name.toLowerCase().contains('garage');
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isGarage ? Icons.garage_outlined : Icons.sensor_door_outlined,
+                  size: 22,
+                  color: c.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isGarage ? 'Accès garage' : 'Accès porte',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.nfc_rounded, size: 22, color: c.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    detected ? 'Badge détecté' : 'En attente de badge',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: detected ? accentColor : c.textSecondary,
+                      fontWeight:
+                          detected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
       case 'OUTLET':
       case 'LIGHT':
       default:
@@ -288,8 +343,68 @@ class _DeviceCardState extends State<DeviceCard> {
         return Icons.videocam_rounded;
       case 'LIGHT':
         return Icons.lightbulb_rounded;
+      case 'RFID':
+        return Icons.nfc_rounded;
+      case 'PIR':
+        return Icons.sensors_rounded;
+      case 'RELAIS':
+        return Icons.power_settings_new_rounded;
       default:
         return Icons.devices_other_rounded;
     }
+  }
+}
+
+class _PinBadge extends StatelessWidget {
+  const _PinBadge({
+    required this.pin,
+    required this.required,
+    this.onEdit,
+  });
+
+  final int? pin;
+  final bool required;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = pin == null && required;
+    final label = pin != null ? 'Broche $pin' : (required ? 'Broche requise' : 'Broche —');
+    final color = missing ? warningColor : textSecondary;
+
+    final chip = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.memory_rounded, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
+        ),
+        if (onEdit != null) ...[
+          const SizedBox(width: 2),
+          Icon(Icons.edit_outlined, size: 13, color: accentColor),
+        ],
+      ],
+    );
+
+    if (onEdit == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: chip,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: InkWell(
+        onTap: onEdit,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: chip,
+        ),
+      ),
+    );
   }
 }

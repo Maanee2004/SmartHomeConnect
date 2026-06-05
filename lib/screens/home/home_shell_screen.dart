@@ -1,0 +1,60 @@
+import 'package:flutter/material.dart';
+import 'package:smart_home/screens/dashboard/dashboard_screen.dart';
+import 'package:smart_home/screens/home/pieces_screen.dart';
+import 'package:smart_home/screens/home/profile_screen.dart';
+import 'package:smart_home/screens/home/settings_screen.dart';
+import 'package:smart_home/widgets/app_brand_header.dart';
+import 'package:smart_home/widgets/dashboard_bottom_bar.dart';
+
+/// Conteneur principal après connexion : dashboard + pièces + profil + paramètres.
+class HomeShellScreen extends StatefulWidget {
+  const HomeShellScreen({super.key});
+
+  @override
+  State<HomeShellScreen> createState() => _HomeShellScreenState();
+}
+
+class _HomeShellScreenState extends State<HomeShellScreen> {
+  int _tab = 0;
+
+  void _selectTab(int index) {
+    if (_tab == index) return;
+    setState(() => _tab = index);
+  }
+
+  Widget _bottomBar() {
+    return DashboardBottomBar(
+      selectedIndex: _tab,
+      onSelect: _selectTab,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SafeArea(
+          bottom: false,
+          child: AppBrandHeader(compact: true, showTagline: false),
+        ),
+        Expanded(
+          child: IndexedStack(
+      index: _tab,
+      children: [
+        DashboardScreen(
+          bottomNavigationBar: _bottomBar(),
+          onGoHome: () => _selectTab(0),
+        ),
+        PiecesScreen(
+          bottomNavigationBar: _bottomBar(),
+          onOpenDashboard: () => _selectTab(0),
+        ),
+        ProfileScreen(bottomNavigationBar: _bottomBar()),
+        SettingsScreen(bottomNavigationBar: _bottomBar()),
+      ],
+          ),
+        ),
+      ],
+    );
+  }
+}

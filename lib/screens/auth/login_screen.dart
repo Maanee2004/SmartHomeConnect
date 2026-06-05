@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/screens/auth/register_screen.dart';
-import 'package:smart_home/screens/dashboard/dashboard_screen.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/firestore_auth_repository.dart';
+import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/widgets/app_brand_header.dart';
 import 'package:smart_home/widgets/custom_text_field.dart';
 import 'package:smart_home/widgets/glow_button.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
@@ -17,14 +19,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  final _focusFirst = FocusNode();
-  final _focusLast = FocusNode();
   final _focusEmail = FocusNode();
   final _focusPhone = FocusNode();
   final _focusPassword = FocusNode();
@@ -35,8 +33,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _submitting = false;
   String _selectedCountry = 'Mali';
 
-  bool _isFirstNameValid = true;
-  bool _isLastNameValid = true;
   bool _isEmailValid = true;
   bool _isPhoneValid = true;
 
@@ -44,7 +40,6 @@ class _LoginScreenState extends State<LoginScreen> {
   static const String _savedPhoneKey = 'saved_phone';
   static const String _rememberEmailKey = 'remember_email';
   static const String _savedEmailKey = 'saved_email';
-  static const String _cachedUserNameKey = 'cached_user_name';
   static const String _loginUseEmailKey = 'login_use_email';
 
   final Map<String, String> _countryCodes = {
@@ -66,6 +61,9 @@ class _LoginScreenState extends State<LoginScreen> {
     'Niger': 8,
     'Guinée': 9,
   };
+
+  String get _fullPhone =>
+      '${_countryCodes[_selectedCountry]}${_phoneController.text.trim()}';
 
   @override
   void initState() {
@@ -126,29 +124,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _focusFirst.dispose();
-    _focusLast.dispose();
     _focusEmail.dispose();
     _focusPhone.dispose();
     _focusPassword.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  bool _validateFirstName(String name) {
-    if (name.isEmpty) return false;
-    if (name.length < 2) return false;
-    return RegExp(r'^[a-zA-Z\s-]+$').hasMatch(name);
-  }
-
-  bool _validateLastName(String name) {
-    if (name.isEmpty) return false;
-    if (name.length < 2) return false;
-    return RegExp(r'^[a-zA-Z\s-]+$').hasMatch(name);
   }
 
   bool _validateEmail(String email) {
@@ -166,8 +148,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _validateFields() {
     setState(() {
-      _isFirstNameValid = _validateFirstName(_firstNameController.text);
-      _isLastNameValid = _validateLastName(_lastNameController.text);
       _isEmailValid = _validateEmail(_emailController.text);
       _isPhoneValid = _validatePhone(_phoneController.text);
     });
@@ -193,24 +173,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (_submitting) return;
-    final firstName = _firstNameController.text.trim();
-    final lastName = _lastNameController.text.trim();
     final email = _emailController.text.trim();
     final phone = _phoneController.text.trim();
     final password = _passwordController.text;
-
-    if (firstName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le prénom est requis')),
-      );
-      return;
-    }
-    if (lastName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le nom est requis')),
-      );
-      return;
-    }
 
     if (_useEmail) {
       if (email.isEmpty) {
@@ -228,8 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       if (phone.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Le numéro de téléphone est requis')),
+          const SnackBar(content: Text('Le numéro de téléphone est requis')),
         );
         return;
       }
@@ -253,37 +217,25 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    _validateFields();
-    if (!_isFirstNameValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Prénom invalide')),
-      );
-      return;
-    }
-    if (!_isLastNameValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nom invalide')),
-      );
-      return;
-    }
-
     setState(() => _submitting = true);
     try {
+      final user = await FirestoreAuthRepository.instance.login(
+        email: _useEmail ? email : null,
+        phone: _useEmail ? null : _fullPhone,
+        plainPassword: password,
+      );
       await _saveCredentialsPreference();
-
-      final displayName =
-          [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
-      final prefs = await SharedPreferences.getInstance();
-      if (displayName.isNotEmpty) {
-        await prefs.setString(_cachedUserNameKey, displayName);
-        await AuthService.instance.setCachedUserName(displayName);
-      }
-
+      await AuthService.instance.saveSession(user);
+      await FirestoreHomeRepository.bootstrap();
+    } on AuthFailure catch (e) {
       if (!mounted) return;
-      await Future<void>.delayed(const Duration(milliseconds: 280));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de connexion : $e')),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -320,8 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   'Email',
                   style: TextStyle(
                     color: _useEmail ? accentColor : c.textSecondary,
-                    fontWeight:
-                        _useEmail ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: _useEmail ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               ),
@@ -371,10 +322,24 @@ class _LoginScreenState extends State<LoginScreen> {
     final c = context.smartColors;
     return Scaffold(
       backgroundColor: c.scaffoldBackground,
-      body: Stack(
+      body: Column(
         children: [
-          Center(
-            child: SingleChildScrollView(
+          SafeArea(
+            bottom: false,
+            child: Stack(
+              children: [
+                const Center(child: AppBrandHeader()),
+                const Positioned(
+                  top: 0,
+                  right: 8,
+                  child: ThemeToggleButton(),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 420),
@@ -406,239 +371,193 @@ class _LoginScreenState extends State<LoginScreen> {
                       'Connecte-toi pour continuer',
                       style: TextStyle(color: c.textSecondary),
                     ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: CustomTextField(
-                        hint: 'Prénom',
-                        icon: Icons.person_outline,
-                        controller: _firstNameController,
-                        focusNode: _focusFirst,
-                        semanticsLabel: 'Prénom',
+                    const SizedBox(height: 16),
+                    _modeToggle(),
+                    const SizedBox(height: 12),
+                    if (_useEmail)
+                      CustomTextField(
+                        hint: 'Email',
+                        icon: Icons.email,
+                        controller: _emailController,
+                        focusNode: _focusEmail,
+                        semanticsLabel: 'Adresse e-mail',
+                        keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => _focusLast.requestFocus(),
+                        onSubmitted: (_) => _focusPassword.requestFocus(),
                         onChanged: (_) => _validateFields(),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: CustomTextField(
-                        hint: 'Nom',
-                        icon: Icons.person,
-                        controller: _lastNameController,
-                        focusNode: _focusLast,
-                        semanticsLabel: 'Nom',
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) {
-                          if (_useEmail) {
-                            _focusEmail.requestFocus();
-                          } else {
-                            _focusPhone.requestFocus();
-                          }
-                        },
-                        onChanged: (_) => _validateFields(),
-                      ),
-                    ),
-                  ],
-                ),
-                if (!_isFirstNameValid || !_isLastNameValid) ...[
-                  const SizedBox(height: 6),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Prénom / nom invalides (lettres, 2 caractères min.)',
-                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                _modeToggle(),
-                const SizedBox(height: 12),
-                if (_useEmail)
-                  CustomTextField(
-                    hint: 'Email',
-                    icon: Icons.email,
-                    controller: _emailController,
-                    focusNode: _focusEmail,
-                    semanticsLabel: 'Adresse e-mail',
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    onSubmitted: (_) => _focusPassword.requestFocus(),
-                    onChanged: (_) => _validateFields(),
-                  )
-                else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: c.inputFill,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: accentColor, width: 1),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedCountry,
-                            dropdownColor: c.card,
-                            iconEnabledColor: c.textSecondary,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 13,
+                      )
+                    else
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: c.inputFill,
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: accentColor, width: 1),
                             ),
-                            isDense: true,
-                            items: _countryCodes.keys.map((c) {
-                              return DropdownMenuItem(
-                                value: c,
-                                child: Text(
-                                  '${_countryCodes[c]} $c',
-                                  style: const TextStyle(fontSize: 12),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedCountry,
+                                dropdownColor: c.card,
+                                iconEnabledColor: c.textSecondary,
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 13,
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                setState(() {
-                                  _selectedCountry = v;
-                                  _validateFields();
-                                });
-                              }
-                            },
+                                isDense: true,
+                                items: _countryCodes.keys.map((country) {
+                                  return DropdownMenuItem(
+                                    value: country,
+                                    child: Text(
+                                      '${_countryCodes[country]} $country',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    setState(() {
+                                      _selectedCountry = v;
+                                      _validateFields();
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: CustomTextField(
+                              hint:
+                                  '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
+                              icon: Icons.phone,
+                              controller: _phoneController,
+                              focusNode: _focusPhone,
+                              semanticsLabel: 'Numéro de téléphone',
+                              keyboardType: TextInputType.phone,
+                              textInputAction: TextInputAction.next,
+                              onSubmitted: (_) => _focusPassword.requestFocus(),
+                              onChanged: (_) => _validateFields(),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: CustomTextField(
-                          hint:
-                              '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
-                          icon: Icons.phone,
-                          controller: _phoneController,
-                          focusNode: _focusPhone,
-                          semanticsLabel: 'Numéro de téléphone',
-                          keyboardType: TextInputType.phone,
-                          textInputAction: TextInputAction.next,
-                          onSubmitted: (_) => _focusPassword.requestFocus(),
-                          onChanged: (_) => _validateFields(),
+                    if (_useEmail && !_isEmailValid) ...[
+                      const SizedBox(height: 6),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Email invalide',
+                          style:
+                              TextStyle(color: Colors.redAccent, fontSize: 11),
                         ),
                       ),
                     ],
-                  ),
-                if (_useEmail && !_isEmailValid) ...[
-                  const SizedBox(height: 6),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Email invalide',
-                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
-                    ),
-                  ),
-                ],
-                if (!_useEmail && !_isPhoneValid && _phoneController.text.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Numéro invalide pour le pays choisi',
-                      style: TextStyle(color: Colors.redAccent, fontSize: 11),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 15),
-                CustomTextField(
-                  hint: 'Mot de passe',
-                  icon: Icons.lock,
-                  obscure: _obscure,
-                  controller: _passwordController,
-                  focusNode: _focusPassword,
-                  semanticsLabel: 'Mot de passe',
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _submit(),
-                  suffix: IconButton(
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(
-                      _obscure ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed:
-                        _submitting ? null : _showForgotPasswordDialog,
-                    child: Text(
-                      'Mot de passe oublié ?',
-                      style: TextStyle(
-                        color: accentColor.withValues(alpha: 0.95),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                    if (!_useEmail &&
+                        !_isPhoneValid &&
+                        _phoneController.text.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Numéro invalide pour le pays choisi',
+                          style:
+                              TextStyle(color: Colors.redAccent, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 15),
+                    CustomTextField(
+                      hint: 'Mot de passe',
+                      icon: Icons.lock,
+                      obscure: _obscure,
+                      controller: _passwordController,
+                      focusNode: _focusPassword,
+                      semanticsLabel: 'Mot de passe',
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
+                      suffix: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(
+                          _obscure ? Icons.visibility_off : Icons.visibility,
+                          color: Colors.grey,
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _rememberMe,
-                      onChanged: (v) =>
-                          setState(() => _rememberMe = v ?? false),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () =>
-                            setState(() => _rememberMe = !_rememberMe),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed:
+                            _submitting ? null : _showForgotPasswordDialog,
                         child: Text(
-                          'Se souvenir de moi',
+                          'Mot de passe oublié ?',
+                          style: TextStyle(
+                            color: accentColor.withValues(alpha: 0.95),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: (v) =>
+                              setState(() => _rememberMe = v ?? false),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () =>
+                                setState(() => _rememberMe = !_rememberMe),
+                            child: Text(
+                              'Se souvenir de moi',
+                              style: TextStyle(color: c.textSecondary),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    GlowButton(
+                      text: 'Se connecter',
+                      loading: _submitting,
+                      enabled: !_submitting,
+                      onTap: _submit,
+                    ),
+                    const SizedBox(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Pas de compte ? ',
                           style: TextStyle(color: c.textSecondary),
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                GlowButton(
-                  text: 'Se connecter',
-                  loading: _submitting,
-                  enabled: !_submitting,
-                  onTap: _submit,
-                ),
-                const SizedBox(height: 15),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Pas de compte ? ',
-                      style: TextStyle(color: c.textSecondary),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterScreen(),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RegisterScreen(),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'S’inscrire',
+                            style: TextStyle(
+                              color: accentColor,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        );
-                      },
-                      child: const Text(
-                        'S’inscrire',
-                        style: TextStyle(
-                          color: accentColor,
-                          fontWeight: FontWeight.bold,
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
                   ],
                 ),
               ),
             ),
-          ),
-          Positioned(
-            top: MediaQuery.paddingOf(context).top + 4,
-            right: 8,
-            child: const ThemeToggleButton(),
+            ),
           ),
         ],
       ),

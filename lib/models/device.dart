@@ -1,4 +1,5 @@
-/// Appareil domotique (contrat backend : `type`, `state` flexible, `roomId`).
+import 'package:smart_home/models/appareil_spec.dart';
+
 class Device {
   const Device({
     required this.id,
@@ -7,138 +8,153 @@ class Device {
     required this.type,
     required this.state,
     this.isOnline = true,
+    this.categorie,
+    this.pin,
+    this.valeur,
+    this.piece,
+    this.unit,
+    this.isCanonical = false,
   });
 
   final String id;
   final String name;
   final String roomId;
-
-  /// Valeurs attendues : `LIGHT`, `SENSOR_TEMP`, `FAN`, etc. (normalisé en majuscules).
   final String type;
   final Map<String, dynamic> state;
   final bool isOnline;
+  final String? categorie;
+  final int? pin;
+  final num? valeur;
+  final String? piece;
+  final String? unit;
+  final bool isCanonical;
 
-  /// Type normalisé pour les `switch` UI.
+  bool get isActionneur => categorie == 'actionneur';
+  bool get isCapteur => categorie == 'capteur';
+
+  /// Actionneur ou type legacy nécessitant une broche GPIO.
+  bool get expectsPin =>
+      isActionneur || AppareilSpec.requiresPin(type);
+
   String get normalizedType {
     final u = type.toUpperCase().trim();
-    if (u == 'LAMP' || u == 'LAMPE' || u == 'LIGHT' || u == 'LIGHTBULB') {
-      return 'LIGHT';
-    }
-    if (u == 'FAN' || u == 'VENTILATEUR') return 'FAN';
-    if (u == 'SENSOR_TEMP' || u == 'TEMPERATURE' || u == 'TEMP') {
-      return 'SENSOR_TEMP';
-    }
-    if (u == 'SENSOR_HUMID' ||
-        u == 'HUMIDITY' ||
-        u == 'HUM' ||
-        u == 'HYGRO') {
-      return 'SENSOR_TEMP';
-    }
-    if (u == 'CAMERA' || u == 'CAMÉRA' || u == 'CAM') {
-      return 'CAMERA';
-    }
-    if (u == 'OUTLET' || u == 'PRISE' || u == 'SOCKET') {
-      return 'OUTLET';
-    }
-    return u.isEmpty ? 'LIGHT' : u;
+    if (u == 'DHT_TEMP' || u == 'DHT22') return 'DHT_TEMP';
+    if (u == 'DHT_HUM') return 'DHT_HUM';
+    if (u == 'PIR') return 'PIR';
+    if (u == 'RELAIS' || u == 'RELAIS') return 'RELAIS';
+    if (u == 'LIGHT' || u == 'LAMPE') return 'LIGHT';
+    return u.isEmpty ? 'RELAIS' : u;
   }
 
   bool get isOn {
-    final v = state['isOn'];
+    if (isCanonical && isActionneur) return valeur == 1;
+    final v = state['isOn'] ?? valeur;
     if (v is bool) return v;
     if (v is num) return v != 0;
     return false;
   }
 
   double? get temperatureCelsius {
-    final v = state['temperature'] ?? state['value'] ?? state['temp'];
+    if (isCanonical &&
+        (id.toLowerCase().contains('dht_temp') ||
+            normalizedType == 'DHT_TEMP') &&
+        valeur is num) {
+      return valeur!.toDouble();
+    }
+    final v = state['temperature'] ?? state['value'];
     if (v is num) return v.toDouble();
     return null;
   }
 
-  /// Humidité relative (0–100), clés usuelles : `humidity`, `rh`, `humid`.
   double? get humidityPercent {
-    final v = state['humidity'] ??
-        state['humidityRh'] ??
-        state['rh'] ??
-        state['humid'] ??
-        state['humidityPercent'];
+    if (isCanonical &&
+        (id.toLowerCase().contains('dht_hum') ||
+            normalizedType == 'DHT_HUM') &&
+        valeur is num) {
+      return valeur!.toDouble().clamp(0, 100);
+    }
+    final v = state['humidity'] ?? state['rh'];
     if (v is num) return v.toDouble().clamp(0, 100);
     return null;
   }
 
   int get fanSpeed {
     final v = state['speed'] ?? state['fanSpeed'];
-    if (v is int) return v.clamp(0, 3);
-    if (v is num) return v.toInt().clamp(0, 3);
+    if (v is num) return v.toInt();
     return 0;
   }
 
-  /// Capteurs ne comptent pas comme « appareil allumé » pour les résumés.
   bool get isActuatorOn {
-    final t = normalizedType;
-    if (t == 'SENSOR_TEMP') return false;
+    if (isCanonical && isCapteur) return false;
+    if (normalizedType == 'DHT_TEMP' ||
+        normalizedType == 'DHT_HUM' ||
+        normalizedType == 'PIR' ||
+        normalizedType == 'ULTRASON' ||
+        normalizedType == 'RFID') {
+      return false;
+    }
     return isOn;
   }
 
-  static Map<String, dynamic> _stateFromFirestore(Map<String, dynamic> data) {
+  static Map<String, dynamic> _legacyState(Map<String, dynamic> data) {
     final raw = data['state'];
-    if (raw is Map) {
-      return Map<String, dynamic>.from(raw);
-    }
-    if (raw is bool) {
-      return {'isOn': raw};
-    }
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is bool) return {'isOn': raw};
     return {'isOn': false};
   }
 
+  static String _slugFromPiece(String piece) =>
+      piece.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+
   factory Device.fromFirestore(String id, Map<String, dynamic> data) {
-    final nameRaw = (data['name'] as String?)?.trim();
-    final typeRaw = (data['type'] as String?)?.trim();
     final status = data['status'] as String?;
-    final explicitOnline = data['online'] as bool?;
-    final online = explicitOnline ??
-        (status == null || status != 'offline');
+    final online =
+        (data['online'] as bool?) ?? (status == null || status != 'offline');
+
+    if (AppareilSpec.isAppareilDocument(data)) {
+      final pieceRaw = (data[AppareilSpec.fieldPiece] as String?)?.trim() ?? '';
+      final cat = AppareilSpec.categorieFromData(data, id);
+      final ty = AppareilSpec.typeFromData(data, id);
+      final val = data[AppareilSpec.fieldValeur];
+      num? valeur;
+      if (val is num) valeur = val;
+      int? pin;
+      final pinRaw = data[AppareilSpec.fieldPin];
+      if (pinRaw is num) pin = pinRaw.toInt();
+
+      return Device(
+        id: id,
+        name: AppareilSpec.displayLabel(data, id),
+        roomId: pieceRaw.isEmpty ? '' : _slugFromPiece(pieceRaw),
+        piece: pieceRaw.isEmpty ? null : pieceRaw,
+        type: ty,
+        state: {'valeur': valeur ?? 0},
+        isOnline: online,
+        categorie: cat,
+        pin: pin,
+        valeur: valeur,
+        unit: data[AppareilSpec.fieldUnit] as String?,
+        isCanonical: true,
+      );
+    }
+
+    final nameRaw =
+        (data['nom'] as String?)?.trim() ?? (data['name'] as String?)?.trim();
+    final pieceLegacy = (data['piece'] as String?)?.trim();
+    final roomRaw = pieceLegacy ??
+        (data['piece_id'] as String?)?.trim() ??
+        (data['roomId'] as String?)?.trim();
 
     return Device(
       id: id,
-      name: (nameRaw == null || nameRaw.isEmpty) ? 'Appareil' : nameRaw,
-      roomId: (data['roomId'] as String?)?.trim() ?? '',
-      type: (typeRaw == null || typeRaw.isEmpty) ? 'LIGHT' : typeRaw,
-      state: _stateFromFirestore(data),
+      name: (nameRaw == null || nameRaw.isEmpty)
+          ? AppareilSpec.displayLabel(data, id)
+          : nameRaw,
+      roomId: roomRaw ?? '',
+      piece: pieceLegacy,
+      type: (data['type'] as String?)?.trim() ?? 'LIGHT',
+      state: _legacyState(data),
       isOnline: online,
     );
   }
-
-  factory Device.fromJson(Map<String, dynamic> json) {
-    final nameRaw = (json['name'] as String?)?.trim();
-    final typeRaw = (json['type'] as String?)?.trim();
-    final stateRaw = json['state'];
-    Map<String, dynamic> st;
-    if (stateRaw is Map) {
-      st = Map<String, dynamic>.from(stateRaw);
-    } else if (stateRaw is bool) {
-      st = {'isOn': stateRaw};
-    } else {
-      st = {'isOn': false};
-    }
-    return Device(
-      id: json['id'] as String,
-      name: (nameRaw == null || nameRaw.isEmpty) ? 'Appareil' : nameRaw,
-      roomId: (json['roomId'] as String?)?.trim() ?? '',
-      type: (typeRaw == null || typeRaw.isEmpty) ? 'LIGHT' : typeRaw,
-      state: st,
-      isOnline: (json['online'] as bool?) ??
-          ((json['status'] as String?) != 'offline'),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'roomId': roomId,
-        'type': type,
-        'state': state,
-        'online': isOnline,
-      };
 }

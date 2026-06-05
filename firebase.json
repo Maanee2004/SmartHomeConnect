@@ -1,1 +1,26 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"smarthousedb-mmd","appId":"1:397104818734:android:11928dd8d26deb020f4dbf","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"smarthousedb-mmd","configurations":{"android":"1:397104818734:android:11928dd8d26deb020f4dbf","ios":"1:397104818734:ios:c1f890acc25e04310f4dbf","web":"1:397104818734:web:d0cedcf3494850d80f4dbf"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "smarthousedb-mmd",
+          "appId": "1:397104818734:android:11928dd8d26deb020f4dbf",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "smarthousedb-mmd",
+          "configurations": {
+            "android": "1:397104818734:android:11928dd8d26deb020f4dbf",
+            "ios": "1:397104818734:ios:c1f890acc25e04310f4dbf",
+            "web": "1:397104818734:web:d0cedcf3494850d80f4dbf"
+          }
+        }
+      }
+    }
+  }
+}

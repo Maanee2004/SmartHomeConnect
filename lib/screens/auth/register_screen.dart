@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/firestore_auth_repository.dart';
+import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/widgets/app_brand_header.dart';
 import 'package:smart_home/widgets/custom_text_field.dart';
 import 'package:smart_home/widgets/glow_button.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
@@ -21,7 +24,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
 
-  bool _useEmail = true;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _submitting = false;
@@ -51,6 +53,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     'Niger': 8,
     'Guinée': 9,
   };
+
+  String get _fullPhone =>
+      '${_countryCodes[_selectedCountry]}${_phoneController.text.trim()}';
 
   @override
   void dispose() {
@@ -119,38 +124,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (_useEmail) {
-      if (email.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('L’email est requis')),
-        );
-        return;
-      }
-      if (!_validateEmail(email)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Format email invalide')),
-        );
-        return;
-      }
-    } else {
-      if (phone.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Le numéro de téléphone est requis')),
-        );
-        return;
-      }
-      if (!_validatePhone(phone)) {
-        final requiredLength = _phoneLengths[_selectedCountry] ?? 8;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Numéro invalide: $_selectedCountry nécessite $requiredLength chiffres',
-            ),
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('L’email est requis')),
+      );
+      return;
+    }
+    if (!_validateEmail(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Format email invalide')),
+      );
+      return;
+    }
+
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Le numéro de téléphone est requis')),
+      );
+      return;
+    }
+    if (!_validatePhone(phone)) {
+      final requiredLength = _phoneLengths[_selectedCountry] ?? 8;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Numéro invalide: $_selectedCountry nécessite $requiredLength chiffres',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
     }
 
     if (password.isEmpty) {
@@ -177,15 +179,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     _validateFields();
-    if (!_isFirstNameValid) {
+    if (!_isFirstNameValid || !_isLastNameValid) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Prénom invalide')),
-      );
-      return;
-    }
-    if (!_isLastNameValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nom invalide')),
+        const SnackBar(content: Text('Prénom ou nom invalide')),
       );
       return;
     }
@@ -194,95 +190,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final displayName =
           [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
-      if (displayName.isNotEmpty) {
-        await AuthService.instance.setCachedUserName(displayName);
-      }
+      final user = await FirestoreAuthRepository.instance.register(
+        name: displayName,
+        email: email,
+        phone: _fullPhone,
+        plainPassword: password,
+      );
+      await AuthService.instance.saveSession(user);
+      await FirestoreHomeRepository.bootstrap();
 
-      await Future<void>.delayed(const Duration(milliseconds: 260));
       if (!mounted) return;
-      Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ton compte a été créé avec succès')),
+      );
+    } on AuthFailure catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur d’inscription : $e')),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
-  }
-
-  Widget _modeToggle() {
-    final c = context.smartColors;
-    final inactiveBorder = c.textSecondary.withValues(alpha: 0.45);
-    return Row(
-      children: [
-        Expanded(
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => setState(() {
-                _useEmail = true;
-                _validateFields();
-              }),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: _useEmail
-                      ? accentColor.withValues(alpha: 0.25)
-                      : c.inputFill,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _useEmail ? accentColor : inactiveBorder,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Email',
-                  style: TextStyle(
-                    color: _useEmail ? accentColor : c.textSecondary,
-                    fontWeight:
-                        _useEmail ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => setState(() {
-                _useEmail = false;
-                _validateFields();
-              }),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: !_useEmail
-                      ? accentColor.withValues(alpha: 0.25)
-                      : c.inputFill,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: !_useEmail ? accentColor : inactiveBorder,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Téléphone',
-                  style: TextStyle(
-                    color: !_useEmail ? accentColor : c.textSecondary,
-                    fontWeight:
-                        !_useEmail ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   @override
@@ -305,8 +238,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ThemeToggleButton(),
         ],
       ),
-      body: Center(
-        child: SingleChildScrollView(
+      body: Column(
+        children: [
+          const SafeArea(
+            bottom: false,
+            child: AppBrandHeader(compact: true, showTagline: false),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 420),
@@ -335,7 +275,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Remplis tes informations',
+                  'Email et téléphone obligatoires',
                   style: TextStyle(color: c.textSecondary),
                 ),
                 const SizedBox(height: 16),
@@ -373,76 +313,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                _modeToggle(),
-                const SizedBox(height: 12),
-                if (_useEmail)
-                  CustomTextField(
-                    hint: 'Email',
-                    icon: Icons.email,
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) => _validateFields(),
-                  )
-                else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: c.inputFill,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: accentColor, width: 1),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedCountry,
-                            dropdownColor: c.card,
-                            iconEnabledColor: c.textSecondary,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontSize: 13,
-                            ),
-                            isDense: true,
-                            items: _countryCodes.keys.map((country) {
-                              return DropdownMenuItem(
-                                value: country,
-                                child: Text(
-                                  '${_countryCodes[country]} $country',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: c.textPrimary,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                setState(() {
-                                  _selectedCountry = v;
-                                  _validateFields();
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: CustomTextField(
-                          hint:
-                              '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
-                          icon: Icons.phone,
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          textInputAction: TextInputAction.next,
-                          onChanged: (_) => _validateFields(),
-                        ),
-                      ),
-                    ],
-                  ),
-                if (_useEmail && !_isEmailValid && _emailController.text.isNotEmpty) ...[
+                CustomTextField(
+                  hint: 'Email',
+                  icon: Icons.email,
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  onChanged: (_) => _validateFields(),
+                ),
+                if (!_isEmailValid && _emailController.text.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   const Align(
                     alignment: Alignment.centerLeft,
@@ -452,7 +331,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ],
-                if (!_useEmail && !_isPhoneValid && _phoneController.text.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: c.inputFill,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: accentColor, width: 1),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedCountry,
+                          dropdownColor: c.card,
+                          iconEnabledColor: c.textSecondary,
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 13,
+                          ),
+                          isDense: true,
+                          items: _countryCodes.keys.map((country) {
+                            return DropdownMenuItem(
+                              value: country,
+                              child: Text(
+                                '${_countryCodes[country]} $country',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: c.textPrimary,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              setState(() {
+                                _selectedCountry = v;
+                                _validateFields();
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CustomTextField(
+                        hint: '${_phoneLengths[_selectedCountry] ?? 8} chiffres',
+                        icon: Icons.phone,
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => _validateFields(),
+                      ),
+                    ),
+                  ],
+                ),
+                if (!_isPhoneValid && _phoneController.text.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   const Align(
                     alignment: Alignment.centerLeft,
@@ -470,8 +406,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _passwordController,
                   textInputAction: TextInputAction.next,
                   suffix: IconButton(
-                    onPressed: () => setState(
-                        () => _obscurePassword = !_obscurePassword),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                     icon: Icon(
                       _obscurePassword
                           ? Icons.visibility_off
@@ -516,6 +452,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
         ),
+            ),
+          ),
+        ],
       ),
     );
   }
