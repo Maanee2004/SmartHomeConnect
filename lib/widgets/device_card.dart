@@ -3,7 +3,7 @@ import 'package:smart_home/constants.dart';
 import 'package:smart_home/models/device.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
-/// Carte appareil : UI selon [Device.normalizedType] (LIGHT, SENSOR_TEMP, FAN…).
+/// Carte appareil : nom [label], type Arduino, lecture capteur ou commande actionneur.
 class DeviceCard extends StatefulWidget {
   const DeviceCard({
     super.key,
@@ -15,11 +15,7 @@ class DeviceCard extends StatefulWidget {
 
   final Device device;
   final Future<void> Function(Map<String, dynamic> patch) onCommand;
-
-  /// Si non null, affiche une action pour retirer l’appareil (ex. Firestore).
   final VoidCallback? onDelete;
-
-  /// Si non null, permet de modifier la broche GPIO.
   final VoidCallback? onPinEdit;
 
   @override
@@ -27,31 +23,14 @@ class DeviceCard extends StatefulWidget {
 }
 
 class _DeviceCardState extends State<DeviceCard> {
-  double _fanSpeedDraft = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _fanSpeedDraft = widget.device.fanSpeed.toDouble();
-  }
-
-  @override
-  void didUpdateWidget(DeviceCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.device.id != widget.device.id ||
-        oldWidget.device.fanSpeed != widget.device.fanSpeed) {
-      _fanSpeedDraft = widget.device.fanSpeed.toDouble();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
     final d = widget.device;
     final online = d.isOnline;
     final t = d.normalizedType;
-    final highlight =
-        online && d.isActuatorOn && t != 'SENSOR_TEMP';
+    final isSensor = d.isCapteur;
+    final highlight = !isSensor && online && d.isActuatorOn;
 
     return Opacity(
       opacity: online ? 1 : 0.55,
@@ -66,7 +45,7 @@ class _DeviceCardState extends State<DeviceCard> {
           border: Border.all(
             color: highlight
                 ? accentColor.withValues(alpha: 0.5)
-                : borderSubtle.withValues(alpha: 0.65),
+                : c.planBorder.withValues(alpha: 0.65),
             width: highlight ? 1.5 : 1,
           ),
           boxShadow: [
@@ -81,14 +60,15 @@ class _DeviceCardState extends State<DeviceCard> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(_iconForType(t), color: c.textSecondary, size: 28),
+                Icon(_iconForType(t), color: accentColor, size: 28),
                 if (!online) ...[
                   const SizedBox(width: 6),
                   Icon(
                     Icons.cloud_off_outlined,
                     color: errorColor,
-                    size: 22,
+                    size: 20,
                     semanticLabel: 'Hors ligne',
                   ),
                 ],
@@ -101,18 +81,29 @@ class _DeviceCardState extends State<DeviceCard> {
                         d.name,
                         style: TextStyle(
                           color: c.textPrimary,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           fontSize: 16,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _metaLine(d),
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (!online)
-                        Text(
-                          'Hors ligne',
-                          style: TextStyle(
-                            color: errorColor,
-                            fontSize: 12,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Hors ligne',
+                            style: TextStyle(color: errorColor, fontSize: 12),
                           ),
                         ),
                       if (d.pin != null || d.expectsPin || widget.onPinEdit != null)
@@ -143,210 +134,285 @@ class _DeviceCardState extends State<DeviceCard> {
               ],
             ),
             const SizedBox(height: 12),
-            _buildControls(context, t, online),
+            _buildControls(context, online, isSensor),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildControls(BuildContext context, String t, bool online) {
+  static String _metaLine(Device d) {
+    final parts = <String>[];
+    if (d.isMergedDhtPair) {
+      parts.addAll(['DHT_TEMP', 'DHT_HUM']);
+    } else {
+      parts.add(d.type);
+    }
+    final piece = d.piece?.trim();
+    if (piece != null && piece.isNotEmpty) parts.add(piece);
+    parts.add(d.isCapteur ? 'capteur' : 'actionneur');
+    return parts.join(' · ');
+  }
+
+  Widget _buildControls(BuildContext context, bool online, bool isSensor) {
     final d = widget.device;
     final c = context.smartColors;
 
-    switch (t) {
-      case 'SENSOR_TEMP':
-        final temp = d.temperatureCelsius;
-        final hum = d.humidityPercent;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.thermostat_rounded,
-                    size: 22, color: c.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    temp != null ? '${temp.toStringAsFixed(1)} °C' : '— °C',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(Icons.water_drop_outlined,
-                    size: 22, color: c.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    hum != null ? '${hum.round()} % HR' : '— % HR',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w500,
-                      color: c.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      case 'FAN':
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Alimentation',
-                  style: TextStyle(color: c.textSecondary, fontSize: 13),
-                ),
-                Switch.adaptive(
-                  value: d.isOn,
-                  onChanged: !online
-                      ? null
-                      : (v) => widget.onCommand({'isOn': v}),
-                ),
-              ],
-            ),
-            Text(
-              'Vitesse',
-              style: TextStyle(color: c.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 4),
-            Slider(
-              value: _fanSpeedDraft.clamp(0, 3),
-              min: 0,
-              max: 3,
-              divisions: 3,
-              label: _speedLabel(_fanSpeedDraft.round()),
-              onChanged: !online || !d.isOn
-                  ? null
-                  : (v) => setState(() => _fanSpeedDraft = v),
-              onChangeEnd: !online || !d.isOn
-                  ? null
-                  : (v) {
-                      final n = v.round().clamp(0, 3);
-                      widget.onCommand({'speed': n});
-                    },
-            ),
-          ],
-        );
-      case 'CAMERA':
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              d.isOn ? 'Flux actif' : 'Flux coupé',
-              style: TextStyle(color: c.textSecondary, fontSize: 14),
-            ),
-            Switch.adaptive(
-              value: d.isOn,
-              onChanged: !online
-                  ? null
-                  : (v) => widget.onCommand({'isOn': v}),
-            ),
-          ],
-        );
-      case 'RFID':
-        final detected = (d.valeur ?? 0) != 0;
-        final isGarage = d.name.toLowerCase().contains('garage');
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isGarage ? Icons.garage_outlined : Icons.sensor_door_outlined,
-                  size: 22,
-                  color: c.textSecondary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isGarage ? 'Accès garage' : 'Accès porte',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(Icons.nfc_rounded, size: 22, color: c.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    detected ? 'Badge détecté' : 'En attente de badge',
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: detected ? accentColor : c.textSecondary,
-                      fontWeight:
-                          detected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      case 'OUTLET':
-      case 'LIGHT':
-      default:
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              d.isOn ? 'Allumé' : 'Éteint',
-              style: TextStyle(color: c.textSecondary, fontSize: 14),
-            ),
-            Switch.adaptive(
-              value: d.isOn,
-              onChanged: !online
-                  ? null
-                  : (v) => widget.onCommand({'isOn': v}),
-            ),
-          ],
-        );
+    if (isSensor) {
+      return _buildSensorPanel(context, d, c);
     }
+
+    if (d.normalizedType == 'SERVO') {
+      return _buildServoPanel(d, c, online);
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          d.isOn ? 'Allumé' : 'Éteint',
+          style: TextStyle(color: c.textSecondary, fontSize: 14),
+        ),
+        Switch.adaptive(
+          value: d.isOn,
+          onChanged:
+              !online ? null : (v) => widget.onCommand({'isOn': v}),
+        ),
+      ],
+    );
   }
 
-  static String _speedLabel(int s) {
-    return switch (s) {
-      0 => 'Arrêt',
-      1 => '1',
-      2 => '2',
-      _ => '3',
-    };
+  Widget _buildSensorPanel(BuildContext context, Device d, SmartHomeColors c) {
+    final t = d.normalizedType;
+
+    if (d.isDhtDisplay) {
+      return _buildDhtPanel(d, c);
+    }
+    if (t == 'PIR') {
+      final motion = (d.valeur ?? 0) != 0;
+      return _buildMetricPanel(
+        c: c,
+        label: 'Mouvement',
+        value: motion ? 'Détecté' : 'Aucun',
+        icon: Icons.sensors_rounded,
+        highlight: motion,
+      );
+    }
+    if (t == 'RFID') {
+      final badge = d.rfidBadgeUid;
+      return _buildMetricPanel(
+        c: c,
+        label: 'Badge RFID',
+        value: badge ?? 'En attente',
+        icon: Icons.nfc_rounded,
+        highlight: badge != null,
+      );
+    }
+    if (t == 'DHT_TEMP') {
+      final temp = d.temperatureCelsius;
+      return _buildMetricPanel(
+        c: c,
+        label: 'Température',
+        value: temp != null ? '${temp.toStringAsFixed(1)} °C' : '— °C',
+        icon: Icons.device_thermostat_outlined,
+      );
+    }
+    if (t == 'DHT_HUM') {
+      final hum = d.humidityPercent;
+      return _buildMetricPanel(
+        c: c,
+        label: 'Humidité',
+        value: hum != null ? '${hum.round()} %' : '— %',
+        icon: Icons.water_drop_outlined,
+      );
+    }
+
+    final raw = d.valeur;
+    final u = d.unit?.trim();
+    final text = raw is num
+        ? (u != null && u.isNotEmpty ? '$raw $u' : '$raw')
+        : '—';
+    return _buildMetricPanel(
+      c: c,
+      label: 'Mesure',
+      value: text,
+      icon: Icons.sensors_outlined,
+    );
+  }
+
+  Widget _buildServoPanel(Device d, SmartHomeColors c, bool online) {
+    final angle = d.servoAngle.toDouble();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (d.rfidCible != null && d.rfidCible!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              'rfid_cible: ${d.rfidCible}',
+              style: TextStyle(color: c.textSecondary, fontSize: 11),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        Text(
+          'Angle : ${angle.round()}°',
+          style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600),
+        ),
+        Slider(
+          value: angle.clamp(0, 180),
+          min: 0,
+          max: 180,
+          divisions: 18,
+          label: '${angle.round()}°',
+          onChanged: !online
+              ? null
+              : (v) => widget.onCommand({'angle': v.round()}),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDhtPanel(Device d, SmartHomeColors c) {
+    final temp = d.temperatureCelsius;
+    final hum = d.humidityPercent;
+    final waiting = temp == null && hum == null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.inputFill,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: waiting
+          ? Text(
+              'En attente de mesures DHT…',
+              style: TextStyle(color: c.textSecondary, fontSize: 13),
+            )
+          : Row(
+              children: [
+                Expanded(
+                  child: _dhtMetric(
+                    c: c,
+                    icon: Icons.device_thermostat_outlined,
+                    label: 'Temp.',
+                    value: temp != null
+                        ? '${temp.toStringAsFixed(1)} °C'
+                        : '— °C',
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 36,
+                  color: c.planBorder.withValues(alpha: 0.5),
+                ),
+                Expanded(
+                  child: _dhtMetric(
+                    c: c,
+                    icon: Icons.water_drop_outlined,
+                    label: 'Hum.',
+                    value:
+                        hum != null ? '${hum.round()} %' : '— %',
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _dhtMetric({
+    required SmartHomeColors c,
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, size: 20, color: accentColor),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: c.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricPanel({
+    required SmartHomeColors c,
+    required String label,
+    required String value,
+    required IconData icon,
+    bool highlight = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.inputFill,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 22,
+            color: highlight ? accentColor : c.textSecondary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: highlight ? accentColor : c.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   static IconData _iconForType(String type) {
     switch (type) {
-      case 'FAN':
-        return Icons.air_rounded;
-      case 'SENSOR_TEMP':
+      case 'DHT_PAIR':
+      case 'DHT22':
+      case 'DHT_TEMP':
         return Icons.device_thermostat_outlined;
-      case 'OUTLET':
-        return Icons.power_rounded;
-      case 'CAMERA':
-        return Icons.videocam_rounded;
-      case 'LIGHT':
-        return Icons.lightbulb_rounded;
-      case 'RFID':
-        return Icons.nfc_rounded;
+      case 'DHT_HUM':
+        return Icons.water_drop_outlined;
       case 'PIR':
         return Icons.sensors_rounded;
+      case 'LED':
+        return Icons.highlight_rounded;
       case 'RELAIS':
         return Icons.power_settings_new_rounded;
       default:
@@ -368,9 +434,11 @@ class _PinBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.smartColors;
     final missing = pin == null && required;
-    final label = pin != null ? 'Broche $pin' : (required ? 'Broche requise' : 'Broche —');
-    final color = missing ? warningColor : textSecondary;
+    final label =
+        pin != null ? 'Broche $pin' : (required ? 'Broche requise' : 'Broche —');
+    final color = missing ? warningColor : c.textSecondary;
 
     final chip = Row(
       mainAxisSize: MainAxisSize.min,
@@ -379,7 +447,11 @@ class _PinBadge extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         if (onEdit != null) ...[
           const SizedBox(width: 2),

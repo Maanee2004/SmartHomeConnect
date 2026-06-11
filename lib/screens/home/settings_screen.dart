@@ -90,7 +90,7 @@ class SettingsScreen extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(
-                        'Gestion RFID : ajoute un lecteur depuis le bouton + (Accueil).',
+                        'Types : DHT22 (temp./hum. dans valeur), PIR, RELAIS, LED.',
                       ),
                     ),
                   );

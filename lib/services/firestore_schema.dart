@@ -3,6 +3,35 @@
 /// Root: `users`, `appareils`, `accessLogs`, `alerts`
 /// Pièces = champ `piece` sur `appareils` + liste `pieces` dans
 /// `users/{userId}/preferences/settings`.
+///
+/// ### Rôle admin (login → interface admin)
+/// Document `users/{userId}` :
+/// ```json
+/// { "role": "admin" }
+/// ```
+/// Valeurs : `"admin"` | `"user"` (défaut à l’inscription).
+///
+/// ### Membre rattaché à une maison
+/// ```json
+/// { "houseOwnerUserId": "usr_proprietaire" }
+/// ```
+/// + `users/{owner}/preferences/settings.memberUserIds[]`.
+///
+/// ### RFID + SERVO (liaison dynamique porte)
+/// Lecteur RFID (capteur) :
+/// ```json
+/// { "type": "RFID", "categorie": "capteur", "unit": "string", "valeur": "0" }
+/// ```
+/// Servomoteur (actionneur) — champ `rfid_cible` = id du lecteur :
+/// ```json
+/// {
+///   "type": "SERVO",
+///   "categorie": "actionneur",
+///   "unit": "angle",
+///   "valeur": 0,
+///   "rfid_cible": "salon2_lecteur_rfid"
+/// }
+/// ```
 class FirestoreSchema {
   FirestoreSchema._();
 

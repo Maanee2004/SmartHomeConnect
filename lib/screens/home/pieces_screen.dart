@@ -26,8 +26,8 @@ class PiecesScreen extends StatefulWidget {
 class _PiecesScreenState extends State<PiecesScreen> {
   static final _repo = FirestoreHomeRepository();
 
-  bool get _canManage =>
-      Firebase.apps.isNotEmpty && AuthService.instance.isLoggedIn;
+  bool get _canAddRoom =>
+      Firebase.apps.isNotEmpty && AuthService.instance.canAddRooms;
 
   Future<void> _promptAddRoom() async {
     final controller = TextEditingController();
@@ -96,7 +96,7 @@ class _PiecesScreenState extends State<PiecesScreen> {
           IconButton(
             tooltip: 'Ajouter une pièce',
             icon: Icon(Icons.add_rounded, color: context.smartColors.textSecondary),
-            onPressed: !_canManage ? null : _promptAddRoom,
+            onPressed: !_canAddRoom ? null : _promptAddRoom,
           ),
         ],
       ),
@@ -144,10 +144,19 @@ class _PiecesScreenState extends State<PiecesScreen> {
                                 ?.copyWith(color: context.smartColors.textPrimary),
                           ),
                           const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: !_canManage ? null : _promptAddRoom,
-                            child: Text('Ajouter une pièce'),
-                          ),
+                          if (_canAddRoom)
+                            FilledButton(
+                              onPressed: _promptAddRoom,
+                              child: Text('Ajouter une pièce'),
+                            )
+                          else
+                            Text(
+                              'Contactez votre administrateur pour ajouter des pièces.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: context.smartColors.textSecondary,
+                              ),
+                            ),
                         ],
                       ),
                     ),

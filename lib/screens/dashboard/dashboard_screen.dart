@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/models/appareil_spec.dart';
 import 'package:smart_home/models/device.dart';
 import 'package:smart_home/models/house_room.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
@@ -12,6 +13,7 @@ import 'package:smart_home/theme/room_icons.dart';
 import 'package:smart_home/widgets/device_card.dart';
 import 'package:smart_home/widgets/device_grid_skeleton.dart';
 import 'package:smart_home/widgets/load_error_view.dart';
+import 'package:smart_home/widgets/pin_picker_dialog.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
 
 /// Accueil : appareils filtrés par pièce (défaut **Salon**), sélection via menu ⋮.
@@ -20,10 +22,21 @@ class DashboardScreen extends StatefulWidget {
     super.key,
     this.bottomNavigationBar,
     this.onGoHome,
+    this.readOnly,
+    this.showHeader = true,
+    this.houseTitlePrefix,
+    this.embedded = false,
   });
 
   final Widget? bottomNavigationBar;
   final VoidCallback? onGoHome;
+
+  /// `false` par défaut pour admin ; `true` pour utilisateurs standards.
+  final bool? readOnly;
+
+  final bool showHeader;
+  final String? houseTitlePrefix;
+  final bool embedded;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -31,6 +44,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   static final HomeRepository _repo = FirestoreHomeRepository();
+
+  bool get _devicesReadOnly =>
+      widget.readOnly ?? !AuthService.instance.canManageDevices;
+
+  bool get _canAddRoom =>
+      AuthService.instance.canAddRooms && Firebase.apps.isNotEmpty;
 
   /// `true` = afficher tous les appareils, titre « Toute la maison ».
   bool _allHouse = false;
@@ -160,21 +179,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   color: accentColor,
                                 ),
                               ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete_outline_rounded,
-                                color: errorColor.withValues(alpha: 0.9),
-                                size: 22,
+                            if (!_devicesReadOnly)
+                              IconButton(
+                                icon: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: errorColor.withValues(alpha: 0.9),
+                                  size: 22,
+                                ),
+                                tooltip: 'Supprimer la pièce',
+                                onPressed: () async {
+                                  await _confirmDeleteRoom(
+                                    sheetContext: ctx,
+                                    messengerContext: context,
+                                    room: r,
+                                  );
+                                },
                               ),
-                              tooltip: 'Supprimer la pièce',
-                              onPressed: () async {
-                                await _confirmDeleteRoom(
-                                  sheetContext: ctx,
-                                  messengerContext: context,
-                                  room: r,
-                                );
-                              },
-                            ),
                           ],
                         ),
                         onTap: () {
@@ -186,19 +206,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         },
                       ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading:
-                          Icon(Icons.add_circle_outline, color: accentColor),
-                      title: Text(
-                        'Ajouter une pièce',
-                        style: TextStyle(color: context.smartColors.textPrimary),
+                    if (_canAddRoom) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        leading:
+                            Icon(Icons.add_circle_outline, color: accentColor),
+                        title: Text(
+                          'Ajouter une pièce',
+                          style:
+                              TextStyle(color: context.smartColors.textPrimary),
+                        ),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await _promptAddRoom(context);
+                        },
                       ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await _promptAddRoom(context);
-                      },
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -294,7 +317,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     if (ok != true || !context.mounted) return;
     try {
-      await _repo.deleteDevice(device.id);
+      if (device.isMergedDhtPair) {
+        await _repo.deleteDhtSensorPair(device.id);
+      } else {
+        await _repo.deleteDevice(device.id);
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('« ${device.name} » supprimé.')),
@@ -436,6 +463,162 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _pickRoomForDevice(context, rooms);
   }
 
+  /// Demande une broche GPIO avant création (obligatoire pour actionneurs).
+  Future<int?> _resolvePinForNewDevice(
+    BuildContext context, {
+    required String type,
+    required String deviceLabel,
+  }) async {
+    final needsPin = AppareilSpec.requiresPin(type);
+    return showPinPickerDialog(
+      context,
+      repo: _repo,
+      required: needsPin,
+      title: needsPin ? 'Broche GPIO (obligatoire)' : 'Broche GPIO (optionnel)',
+      subtitle:
+          '$deviceLabel — broches ${AppareilSpec.minPin}–${AppareilSpec.maxPin}',
+    );
+  }
+
+  Future<void> _editDevicePin(BuildContext context, Device device) async {
+    final pin = await showPinPickerDialog(
+      context,
+      repo: _repo,
+      required: device.expectsPin,
+      currentPin: device.pin,
+      title: 'Modifier la broche',
+      subtitle: device.name,
+    );
+    if (pin == null || !context.mounted) return;
+    try {
+      await _repo.updateDevicePin(device.id, pin);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Broche $pin assignée à « ${device.name} ».')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(describePinError(e))),
+      );
+    }
+  }
+
+  Future<void> _addRfidReader(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    await _addQuickDevice(
+      context,
+      rooms,
+      name: 'Lecteur RFID',
+      type: 'RFID',
+      initialState: const {'valeur': '0'},
+    );
+  }
+
+  Future<void> _addServoDoor(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    final readers = await _repo.listRfidReaders();
+    if (!context.mounted) return;
+    if (readers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ajoute d’abord un lecteur RFID (type RFID).'),
+        ),
+      );
+      return;
+    }
+
+    final roomId = await _resolveTargetRoomId(context, rooms);
+    if (roomId == null || !context.mounted) return;
+
+    final rfidId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(
+          'Lecteur RFID lié',
+          style: TextStyle(color: context.smartColors.textPrimary),
+        ),
+        children: [
+          for (final r in readers)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, r.id),
+              child: Text('${r.name} (${r.id})'),
+            ),
+        ],
+      ),
+    );
+    if (rfidId == null || !context.mounted) return;
+
+    final pin = await showPinPickerDialog(
+      context,
+      repo: _repo,
+      required: true,
+      title: 'Broche du servomoteur',
+      subtitle: 'rfid_cible → $rfidId',
+    );
+    if (pin == null || !context.mounted) return;
+
+    try {
+      await _repo.addDevice(
+        roomId: roomId,
+        name: 'Servo porte',
+        type: 'SERVO',
+        pin: pin,
+        rfidCible: rfidId,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Servo ajouté (rfid_cible: $rfidId, broche $pin).'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(describePinError(e))),
+      );
+    }
+  }
+
+  Future<void> _addDhtSensor(
+    BuildContext context,
+    List<HouseRoom> rooms,
+  ) async {
+    final roomId = await _resolveTargetRoomId(context, rooms);
+    if (roomId == null || !context.mounted) return;
+
+    final pin = await showPinPickerDialog(
+      context,
+      repo: _repo,
+      required: true,
+      title: 'Broche du capteur DHT',
+      subtitle:
+          'Un doc : température et humidité dans valeur (ex. 24.5/60)',
+    );
+    if (pin == null || !context.mounted) return;
+
+    try {
+      await _repo.addDhtSensor(roomId: roomId, pin: pin);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Capteur DHT ajouté (valeur temp./hum., broche $pin).',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(describePinError(e))),
+      );
+    }
+  }
+
   Future<void> _addQuickDevice(
     BuildContext context,
     List<HouseRoom> rooms, {
@@ -445,23 +628,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) async {
     final roomId = await _resolveTargetRoomId(context, rooms);
     if (roomId == null || !context.mounted) return;
+
+    final pin = await _resolvePinForNewDevice(
+      context,
+      type: type,
+      deviceLabel: name,
+    );
+    if (!context.mounted) return;
+    if (AppareilSpec.requiresPin(type) && pin == null) return;
+
     try {
       final devId = await _repo.addDevice(
         roomId: roomId,
         name: name,
         type: type,
+        pin: pin,
         initialState: initialState,
       );
       if (context.mounted) {
+        final pinNote = pin != null ? ', broche $pin' : '';
         final suffix = devId.isEmpty ? '' : ' (id: $devId)';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('« $name » ajouté.$suffix')),
+          SnackBar(content: Text('« $name » ajouté$pinNote.$suffix')),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Échec: $e')),
+          SnackBar(content: Text(describePinError(e))),
         );
       }
     }
@@ -524,21 +718,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        'Types enregistrés en MAJUSCULES (Arduino CONFIG).',
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: context.smartColors.textSecondary,
+                            ),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Text(
+                        'Capteurs',
+                        style: TextStyle(
+                          color: context.smartColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                     ListTile(
-                      leading:
-                          Icon(Icons.lightbulb_outline, color: accentColor),
+                      leading: Icon(Icons.device_thermostat_rounded,
+                          color: accentColor),
                       title: Text(
-                        'Lampe',
+                        'Capteur DHT',
                         style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       subtitle: Text(
-                        'Éclairage ON/OFF',
+                        'type DHT22 — temp. et humidité dans valeur',
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addDhtSensor(context, rooms);
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.sensors_rounded, color: accentColor),
+                      title: Text(
+                        'Détecteur PIR',
+                        style: TextStyle(color: context.smartColors.textPrimary),
+                      ),
+                      subtitle: Text(
+                        'type: PIR — mouvement 0/1',
                         style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
                         await _addQuickDevice(context, rooms,
-                            name: 'Lampe', type: 'LIGHT');
+                            name: 'Détecteur PIR', type: 'PIR');
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.nfc_rounded, color: accentColor),
+                      title: Text(
+                        'Lecteur RFID',
+                        style: TextStyle(color: context.smartColors.textPrimary),
+                      ),
+                      subtitle: Text(
+                        'type: RFID — unit: string',
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addRfidReader(context, rooms);
+                      },
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Text(
+                        'Actionneurs',
+                        style: TextStyle(
+                          color: context.smartColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    ListTile(
+                      leading:
+                          Icon(Icons.lightbulb_outline, color: accentColor),
+                      title: Text(
+                        'Lampe / prise',
+                        style: TextStyle(color: context.smartColors.textPrimary),
+                      ),
+                      subtitle: Text(
+                        'type: RELAIS — enregistré RELAIS en base',
+                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addQuickDevice(context, rooms,
+                            name: 'Lampe', type: 'RELAIS');
                       },
                     ),
                     ListTile(
@@ -548,68 +822,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       subtitle: Text(
-                        'Allumage + vitesse',
+                        'type: RELAIS — relais ON/OFF',
                         style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
                         await _addQuickDevice(context, rooms,
-                            name: 'Ventilateur', type: 'FAN');
+                            name: 'Ventilateur', type: 'RELAIS');
                       },
                     ),
                     ListTile(
-                      leading:
-                          Icon(Icons.thermostat_rounded, color: accentColor),
+                      leading: Icon(Icons.highlight_rounded, color: accentColor),
                       title: Text(
-                        'Thermomètre',
+                        'LED',
                         style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       subtitle: Text(
-                        'Température',
-                        style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await _addQuickDevice(
-                          context,
-                          rooms,
-                          name: 'Thermomètre',
-                          type: 'SENSOR_TEMP',
-                          initialState: const {'temperature': 20.0},
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: Icon(Icons.power_rounded, color: accentColor),
-                      title: Text(
-                        'Prise',
-                        style: TextStyle(color: context.smartColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        'Prise connectée',
+                        'type: LED — broche directe',
                         style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
                         await _addQuickDevice(context, rooms,
-                            name: 'Prise', type: 'OUTLET');
+                            name: 'LED', type: 'LED');
                       },
                     ),
                     ListTile(
-                      leading:
-                          Icon(Icons.videocam_outlined, color: accentColor),
+                      leading: Icon(Icons.door_sliding_rounded, color: accentColor),
                       title: Text(
-                        'Caméra',
+                        'Servo porte',
                         style: TextStyle(color: context.smartColors.textPrimary),
                       ),
                       subtitle: Text(
-                        'Flux ON/OFF',
+                        'type: SERVO — rfid_cible obligatoire',
                         style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                       ),
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await _addQuickDevice(context, rooms,
-                            name: 'Caméra', type: 'CAMERA');
+                        await _addServoDoor(context, rooms);
                       },
                     ),
                     const Divider(height: 1),
@@ -644,7 +894,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<HouseRoom> rooms,
   ) async {
     final nameCtrl = TextEditingController();
-    var type = 'LIGHT';
+    var type = 'RELAIS';
     var roomId = _effectiveRoomId(rooms);
     final sorted = [...rooms]..sort((a, b) => a.name.compareTo(b.name));
 
@@ -684,20 +934,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       isExpanded: true,
                       dropdownColor: context.smartColors.card,
                       style: TextStyle(color: context.smartColors.textPrimary),
-                      items: const [
-                        DropdownMenuItem(value: 'LIGHT', child: Text('Lampe')),
-                        DropdownMenuItem(
-                          value: 'FAN',
-                          child: Text('Ventilateur'),
+                      items: [
+                        ...AppareilSpec.uiSensorTypes.entries.map(
+                          (e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ),
                         ),
-                        DropdownMenuItem(
-                          value: 'SENSOR_TEMP',
-                          child: Text('Thermomètre'),
-                        ),
-                        DropdownMenuItem(value: 'OUTLET', child: Text('Prise')),
-                        DropdownMenuItem(
-                          value: 'CAMERA',
-                          child: Text('Caméra'),
+                        ...AppareilSpec.uiActuatorTypes.entries.map(
+                          (e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ),
                         ),
                       ],
                       onChanged: (v) {
@@ -754,22 +1002,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
         return;
       }
+
+      final pin = await _resolvePinForNewDevice(
+        context,
+        type: type,
+        deviceLabel: name,
+      );
+      if (!context.mounted) return;
+      if (AppareilSpec.requiresPin(type) && pin == null) return;
+
       try {
         final devId = await _repo.addDevice(
           roomId: roomId,
           name: name,
           type: type,
+          pin: pin,
         );
         if (context.mounted) {
+          final pinNote = pin != null ? ', broche $pin' : '';
           final suffix = devId.isEmpty ? '' : ' (id: $devId)';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('« $name » ajouté.$suffix')),
+            SnackBar(content: Text('« $name » ajouté$pinNote.$suffix')),
           );
         }
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Échec: $e')),
+            SnackBar(content: Text(describePinError(e))),
           );
         }
       }
@@ -782,83 +1041,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final firebaseReady = Firebase.apps.isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: StreamBuilder<List<HouseRoom>>(
-          stream: firebaseReady
-              ? _repo.watchRooms()
-              : Stream.value(const <HouseRoom>[]),
-          initialData: const <HouseRoom>[],
-          builder: (context, snap) {
-            final rooms = snap.data ?? const <HouseRoom>[];
-            return Text(
-              _appBarTitle(rooms, firebaseReady),
-              style: TextStyle(
-                color: context.smartColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            );
-          },
-        ),
-        actions: [
-          const ThemeToggleButton(),
-          StreamBuilder<List<HouseRoom>>(
-            stream: firebaseReady
-                ? _repo.watchRooms()
-                : Stream.value(const <HouseRoom>[]),
-            initialData: const <HouseRoom>[],
-            builder: (context, snap) {
-              final rooms = snap.data ?? const <HouseRoom>[];
-              return IconButton(
-                tooltip: 'Ajouter un appareil',
-                icon: Icon(Icons.add_rounded, color: context.smartColors.textSecondary),
-                onPressed: !firebaseReady || rooms.isEmpty
-                    ? null
-                    : () => _showAddDeviceSheet(context, rooms),
-              );
-            },
-          ),
-          StreamBuilder<List<HouseRoom>>(
-            stream: firebaseReady
-                ? _repo.watchRooms()
-                : Stream.value(const <HouseRoom>[]),
-            initialData: const <HouseRoom>[],
-            builder: (context, snap) {
-              final rooms = snap.data ?? const <HouseRoom>[];
-              return IconButton(
-                tooltip: 'Choisir la pièce',
-                icon: Icon(Icons.more_vert_rounded, color: context.smartColors.textSecondary),
-                onPressed: !firebaseReady || rooms.isEmpty
-                    ? null
-                    : () => _showRoomPicker(context, rooms),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Se déconnecter',
-            icon: Icon(Icons.logout_rounded, color: context.smartColors.textSecondary),
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      bottomNavigationBar: widget.bottomNavigationBar,
-      body: Padding(
+    final body = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _DashboardHeader(),
-            const SizedBox(height: 10),
+            if (widget.showHeader) ...[
+              const _DashboardHeader(),
+              const SizedBox(height: 10),
+            ],
             Text(
-              'Ma maison',
+              widget.houseTitlePrefix ?? 'Ma maison',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: context.smartColors.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -883,12 +1076,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              'Utilise le menu ⋮ pour choisir la pièce et le bouton + pour les appareils',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: context.smartColors.textSecondary,
-                  ),
-            ),
+            if (!_devicesReadOnly)
+              Text(
+                'Utilise le menu ⋮ pour choisir la pièce et le bouton + pour les appareils',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: context.smartColors.textSecondary,
+                    ),
+              )
+            else if (_canAddRoom)
+              Text(
+                'Ajoute des pièces via le menu ⋮. Les appareils sont gérés par l’admin.',
+              )
+            else
+              Text(
+                'Mode consultation : allume/éteins les appareils.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: context.smartColors.textSecondary,
+                    ),
+              ),
             const SizedBox(height: 12),
             Expanded(
               child: !firebaseReady
@@ -1022,7 +1227,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
-                                              'Ajoute une pièce depuis le menu ⋮ ou charge les données de démo.',
+                                              !_canAddRoom
+                                                  ? 'Connecte-toi pour ajouter des pièces.'
+                                                  : 'Ajoute une pièce depuis le menu ⋮'
+                                                      '${_devicesReadOnly ? '.' : ' ou charge les données de démo.'}',
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodyMedium
@@ -1032,7 +1240,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               textAlign: TextAlign.center,
                                             ),
                                             const SizedBox(height: 22),
-                                            FilledButton.tonal(
+                                            if (!_devicesReadOnly)
+                                              FilledButton.tonal(
                                               onPressed: firebaseReady
                                                   ? () async {
                                                       try {
@@ -1146,7 +1355,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
-                                              'Utilise le bouton + pour en ajouter un.',
+                                              _devicesReadOnly
+                                                  ? 'Aucun appareil dans cette pièce.'
+                                                  : 'Utilise le bouton + pour en ajouter un.',
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodySmall
@@ -1173,7 +1384,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 2,
-                                  childAspectRatio: 0.78,
+                                  childAspectRatio: 0.72,
                                   crossAxisSpacing: 8,
                                   mainAxisSpacing: 8,
                                 ),
@@ -1183,9 +1394,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     device: d,
                                     onCommand: (patch) => _repo
                                         .sendDeviceCommand(d.id, patch),
-                                    onDelete: firebaseReady
+                                    onDelete: firebaseReady && !_devicesReadOnly
                                         ? () =>
                                             _confirmDeleteDevice(context, d)
+                                        : null,
+                                    onPinEdit: firebaseReady &&
+                                            !_devicesReadOnly &&
+                                            (d.expectsPin || d.pin != null)
+                                        ? () => _editDevicePin(context, d)
                                         : null,
                                   );
                                 },
@@ -1198,7 +1414,124 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
+      );
+
+    final appBarActions = <Widget>[
+      if (!widget.embedded) const ThemeToggleButton(),
+      if (!_devicesReadOnly)
+        StreamBuilder<List<HouseRoom>>(
+          stream: firebaseReady
+              ? _repo.watchRooms()
+              : Stream.value(const <HouseRoom>[]),
+          initialData: const <HouseRoom>[],
+          builder: (context, snap) {
+            final rooms = snap.data ?? const <HouseRoom>[];
+            return IconButton(
+              tooltip: 'Ajouter un appareil',
+              icon: Icon(Icons.add_rounded,
+                  color: context.smartColors.textSecondary),
+              onPressed: !firebaseReady || rooms.isEmpty
+                  ? null
+                  : () => _showAddDeviceSheet(context, rooms),
+            );
+          },
+        ),
+      StreamBuilder<List<HouseRoom>>(
+        stream: firebaseReady
+            ? _repo.watchRooms()
+            : Stream.value(const <HouseRoom>[]),
+        initialData: const <HouseRoom>[],
+        builder: (context, snap) {
+          final rooms = snap.data ?? const <HouseRoom>[];
+          return IconButton(
+            tooltip: 'Choisir la pièce',
+            icon: Icon(Icons.more_vert_rounded,
+                color: context.smartColors.textSecondary),
+            onPressed: !firebaseReady || rooms.isEmpty
+                ? null
+                : () => _showRoomPicker(context, rooms),
+          );
+        },
       ),
+      if (!widget.embedded)
+        IconButton(
+          tooltip: 'Se déconnecter',
+          icon: Icon(Icons.logout_rounded,
+              color: context.smartColors.textSecondary),
+          onPressed: () async {
+            await AuthService.instance.clearSession();
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (_) => false,
+            );
+          },
+        ),
+    ];
+
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: StreamBuilder<List<HouseRoom>>(
+                    stream: firebaseReady
+                        ? _repo.watchRooms()
+                        : Stream.value(const <HouseRoom>[]),
+                    initialData: const <HouseRoom>[],
+                    builder: (context, snap) {
+                      final rooms = snap.data ?? const <HouseRoom>[];
+                      return Text(
+                        _appBarTitle(rooms, firebaseReady),
+                        style: TextStyle(
+                          color: context.smartColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    },
+                  ),
+                ),
+                ...appBarActions,
+              ],
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: StreamBuilder<List<HouseRoom>>(
+          stream: firebaseReady
+              ? _repo.watchRooms()
+              : Stream.value(const <HouseRoom>[]),
+          initialData: const <HouseRoom>[],
+          builder: (context, snap) {
+            final rooms = snap.data ?? const <HouseRoom>[];
+            return Text(
+              _appBarTitle(rooms, firebaseReady),
+              style: TextStyle(
+                color: context.smartColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          },
+        ),
+        actions: appBarActions,
+      ),
+      bottomNavigationBar: widget.bottomNavigationBar,
+      body: body,
     );
   }
 }

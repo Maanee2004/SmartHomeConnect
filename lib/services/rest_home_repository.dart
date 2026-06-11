@@ -55,6 +55,14 @@ class RestHomeRepository implements HomeRepository {
   }
 
   @override
+  @override
+  Future<List<Device>> listRfidReaders() {
+    return Future<List<Device>>.error(
+      UnimplementedError('GET RFID readers — à implémenter.'),
+    );
+  }
+
+  @override
   Future<String> addDevice({
     required String roomId,
     required String name,
@@ -62,6 +70,7 @@ class RestHomeRepository implements HomeRepository {
     int? pin,
     String? categorie,
     Map<String, dynamic>? initialState,
+    String? rfidCible,
   }) {
     return Future<String>.error(
       UnimplementedError('POST $baseUrl/devices — à implémenter.'),
@@ -86,6 +95,25 @@ class RestHomeRepository implements HomeRepository {
   Future<void> deleteDevice(String deviceId) {
     return Future<void>.error(
       UnimplementedError('DELETE $baseUrl/devices/$deviceId — à implémenter.'),
+    );
+  }
+
+  @override
+  Future<void> addDhtSensor({
+    required String roomId,
+    required int pin,
+    double? temperature,
+    double? humidity,
+  }) {
+    return Future<void>.error(
+      UnimplementedError('POST DHT sensor — à implémenter.'),
+    );
+  }
+
+  @override
+  Future<void> deleteDhtSensorPair(String tempDocId) {
+    return Future<void>.error(
+      UnimplementedError('DELETE DHT pair — à implémenter.'),
     );
   }
 }

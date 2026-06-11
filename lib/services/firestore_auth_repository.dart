@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smart_home/models/app_user.dart';
+import 'package:smart_home/models/user_role.dart';
+import 'package:smart_home/services/firestore_schema.dart';
 import 'package:smart_home/services/password_hasher.dart';
 
 class AuthFailure implements Exception {
@@ -88,6 +90,7 @@ class FirestoreAuthRepository {
       email: mail,
       phone: tel,
       passwordHash: PasswordHasher.hash(plainPassword),
+      role: UserRole.user,
     );
 
     final batch = FirebaseFirestore.instance.batch();
@@ -135,5 +138,138 @@ class FirestoreAuthRepository {
       throw AuthFailure('Identifiants incorrects.');
     }
     return user;
+  }
+
+  /// Création d’utilisateur par un admin (rôle `user` par défaut).
+  Future<AppUser> createUserByAdmin({
+    required String name,
+    required String email,
+    required String phone,
+    required String plainPassword,
+    String? houseOwnerUserId,
+  }) async {
+    final mail = email.trim().toLowerCase();
+    final tel = phone.trim();
+    if (mail.isEmpty || tel.isEmpty) {
+      throw AuthFailure('Email et téléphone sont obligatoires.');
+    }
+    await _assertEmailFree(mail);
+    await _assertPhoneFree(tel);
+
+    final owner = houseOwnerUserId?.trim();
+    if (owner != null && owner.isNotEmpty) {
+      final ownerSnap = await _users.doc(owner).get();
+      if (!ownerSnap.exists) {
+        throw AuthFailure('Propriétaire de maison introuvable ($owner).');
+      }
+    }
+
+    final userId = await _allocateUserId(mail);
+    final user = AppUser(
+      userId: userId,
+      name: name.trim(),
+      email: mail,
+      phone: tel,
+      passwordHash: PasswordHasher.hash(plainPassword),
+      role: UserRole.user,
+      houseOwnerUserId: owner,
+    );
+
+    final batch = FirebaseFirestore.instance.batch();
+    final userRef = _users.doc(userId);
+    batch.set(userRef, user.toCreatePayload(passwordHash: user.passwordHash));
+    batch.set(
+      userRef.collection(FirestoreSchema.preferencesSubcollection).doc(
+            FirestoreSchema.preferencesDocId,
+          ),
+      {
+        FirestoreSchema.fieldUserId: userId,
+        'pieces': <Map<String, String>>[],
+        'theme': 'dark',
+        'notifications': true,
+        'language': 'fr',
+        'fontFamily': 'montserrat',
+        'fontScale': 1.0,
+        'showDateTime': false,
+        'use24HourTime': true,
+        'datePattern': 'dd/MM/yyyy',
+        'alertThreshold': 35.0,
+      },
+    );
+    await batch.commit();
+
+    if (owner != null && owner.isNotEmpty) {
+      await _addMemberToHouse(ownerUserId: owner, memberUserId: userId);
+    }
+    return user;
+  }
+
+  /// Lie un utilisateur à la maison d’un propriétaire (lecture + commandes).
+  Future<void> assignUserToHouse({
+    required String ownerUserId,
+    required String memberUserId,
+  }) async {
+    final owner = ownerUserId.trim();
+    final member = memberUserId.trim();
+    if (owner.isEmpty || member.isEmpty) {
+      throw AuthFailure('Identifiants invalides.');
+    }
+    if (owner == member) {
+      throw AuthFailure('Un utilisateur ne peut pas être membre de sa propre maison.');
+    }
+    final ownerSnap = await _users.doc(owner).get();
+    final memberSnap = await _users.doc(member).get();
+    if (!ownerSnap.exists || !memberSnap.exists) {
+      throw AuthFailure('Utilisateur introuvable.');
+    }
+    await _users.doc(member).set(
+      {'houseOwnerUserId': owner},
+      SetOptions(merge: true),
+    );
+    await _addMemberToHouse(ownerUserId: owner, memberUserId: member);
+  }
+
+  Future<void> _addMemberToHouse({
+    required String ownerUserId,
+    required String memberUserId,
+  }) async {
+    final prefRef = _users
+        .doc(ownerUserId)
+        .collection(FirestoreSchema.preferencesSubcollection)
+        .doc(FirestoreSchema.preferencesDocId);
+    await FirebaseFirestore.instance.runTransaction((tx) async {
+      final snap = await tx.get(prefRef);
+      final data = snap.data() ?? {};
+      final raw = data['memberUserIds'];
+      final members = <String>{
+        if (raw is List)
+          for (final item in raw)
+            if (item is String && item.trim().isNotEmpty) item.trim(),
+      };
+      members.add(memberUserId);
+      tx.set(
+        prefRef,
+        {
+          FirestoreSchema.fieldUserId: ownerUserId,
+          'memberUserIds': members.toList()..sort(),
+        },
+        SetOptions(merge: true),
+      );
+    });
+  }
+
+  Stream<List<AppUser>> watchAllUsers() {
+    return _users.orderBy('name').snapshots().map(
+          (snap) => snap.docs
+              .map((d) => AppUser.fromFirestore(d.id, d.data()))
+              .toList(),
+        );
+  }
+
+  Future<List<AppUser>> fetchAllUsers() async {
+    final snap = await _users.orderBy('name').get();
+    return snap.docs
+        .map((d) => AppUser.fromFirestore(d.id, d.data()))
+        .toList();
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/firebase_options.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
+import 'package:smart_home/screens/admin/admin_shell_screen.dart';
 import 'package:smart_home/screens/home/home_shell_screen.dart';
 import 'package:smart_home/services/auth_service.dart';
 import 'package:smart_home/services/firestore_home_repository.dart';
@@ -120,9 +121,12 @@ class _MyAppState extends State<MyApp> {
             home: ListenableBuilder(
               listenable: AuthService.instance.authNotifier,
               builder: (context, _) {
-                return AuthService.instance.isLoggedIn
-                    ? const HomeShellScreen()
-                    : const LoginScreen();
+                if (!AuthService.instance.isLoggedIn) {
+                  return const LoginScreen();
+                }
+                return AuthService.instance.isAdmin
+                    ? const AdminShellScreen()
+                    : const HomeShellScreen();
               },
             ),
           );
