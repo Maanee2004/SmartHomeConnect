@@ -1,54 +1,46 @@
-/// Schéma Firestore académique (UML).
+/// Schéma Firestore — maison par utilisateur.
 ///
-/// Root: `users`, `appareils`, `accessLogs`, `alerts`
-/// Pièces = champ `piece` sur `appareils` + liste `pieces` dans
-/// `users/{userId}/preferences/settings`.
+/// **Toutes** les données maison (appareils, pièces, alertes) vivent sous :
+/// `maisons/{userId}/appareils`, `maisons/{userId}/pieces`, `maisons/{userId}/alerts`.
 ///
-/// ### Rôle admin (login → interface admin)
-/// Document `users/{userId}` :
-/// ```json
-/// { "role": "admin" }
-/// ```
-/// Valeurs : `"admin"` | `"user"` (défaut à l’inscription).
+/// Alias conceptuel : `maison_<userId>` (ex. `maisons/usr_jean/...`).
+/// L’ESP32 connaît `userId` et lit/écrit uniquement sous ce chemin.
 ///
-/// ### Membre rattaché à une maison
-/// ```json
-/// { "houseOwnerUserId": "usr_proprietaire" }
-/// ```
-/// + `users/{owner}/preferences/settings.memberUserIds[]`.
+/// État en ligne : `maisons/{userId}/isonline/isonline` → `{ isonline: bool }`.
 ///
-/// ### RFID + SERVO (liaison dynamique porte)
-/// Lecteur RFID (capteur) :
-/// ```json
-/// { "type": "RFID", "categorie": "capteur", "unit": "string", "valeur": "0" }
-/// ```
-/// Servomoteur (actionneur) — champ `rfid_cible` = id du lecteur :
-/// ```json
-/// {
-///   "type": "SERVO",
-///   "categorie": "actionneur",
-///   "unit": "angle",
-///   "valeur": 0,
-///   "rfid_cible": "salon2_lecteur_rfid"
-/// }
-/// ```
+/// Racine globale : `users`, `accessLogs` uniquement.
+/// `users/{userId}/preferences/settings` = thème, langue, membres (pas les pièces).
 class FirestoreSchema {
   FirestoreSchema._();
 
   static const usersCollection = 'users';
-  static const appareilsCollection = 'appareils';
+  static const maisonsCollection = 'maisons';
   static const accessLogsCollection = 'accessLogs';
-  static const alertsCollection = 'alerts';
+
+  /// Sous-collections de `maisons/{userId}` — seul emplacement lecture/écriture.
+  static const houseAppareilsSubcollection = 'appareils';
+  static const houseAlertsSubcollection = 'alerts';
+  static const housePiecesSubcollection = 'pieces';
+  static const houseIsonlineSubcollection = 'isonline';
+  static const houseInvitesSubcollection = 'invites';
+
+  /// Index global pour rejoindre une maison par code : `inviteCodes/{code}`.
+  static const inviteCodesCollection = 'inviteCodes';
+
+  static const houseIsonlineDocId = 'isonline';
+  static const fieldIsonline = 'isonline';
 
   static const preferencesSubcollection = 'preferences';
   static const rfidCardsSubcollection = 'rfidCards';
   static const preferencesDocId = 'settings';
 
   static const fieldUserId = 'userId';
-  static const fieldPieces = 'pieces';
+
+  /// Chemin logique : `maisons/usr_jean`.
+  static String houseDocPath(String userId) =>
+      '$maisonsCollection/${userId.trim()}';
 }
 
-/// Conservé pour compatibilité interne (legacy `rooms` / `devices`).
 enum FirestoreCollectionNaming {
   canonical,
   legacy,
@@ -64,7 +56,7 @@ class FirestoreFieldNames {
 
   bool get isCanonical => naming == FirestoreCollectionNaming.canonical;
 
-  String get devicesCollection => FirestoreSchema.appareilsCollection;
+  String get devicesCollection => FirestoreSchema.houseAppareilsSubcollection;
 
   String get deviceRoomFk => 'piece';
 

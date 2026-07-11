@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/models/house_room.dart';
 import 'package:smart_home/services/auth_service.dart';
@@ -79,6 +80,60 @@ class _PiecesScreenState extends State<PiecesScreen> {
     }
   }
 
+  Future<void> _promptRenameRoom(HouseRoom room) async {
+    final controller = TextEditingController(text: room.name);
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(
+            'Renommer la pièce',
+            style: TextStyle(color: context.smartColors.textPrimary),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: TextStyle(color: context.smartColors.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Nouveau nom',
+              hintStyle: TextStyle(color: context.smartColors.textSecondary),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final t = controller.text.trim();
+                Navigator.pop(ctx, t.isEmpty ? null : t);
+              },
+              child: Text('Enregistrer'),
+            ),
+          ],
+        ),
+      );
+      if (name == null || name.isEmpty || name == room.name || !mounted) return;
+      await _repo.renameRoom(room.id, name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pièce renommée en « $name ».')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            FirestoreHomeRepository.describeFirebaseError(e),
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final firebaseReady = Firebase.apps.isNotEmpty;
@@ -89,13 +144,16 @@ class _PiecesScreenState extends State<PiecesScreen> {
         elevation: 0,
         title: Text(
           'Pièces',
-          style: TextStyle(color: context.smartColors.textPrimary, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              color: context.smartColors.textPrimary,
+              fontWeight: FontWeight.w600),
         ),
         actions: [
           const ThemeToggleButton(),
           IconButton(
             tooltip: 'Ajouter une pièce',
-            icon: Icon(Icons.add_rounded, color: context.smartColors.textSecondary),
+            icon: Icon(Icons.add_rounded,
+                color: context.smartColors.textSecondary),
             onPressed: !_canAddRoom ? null : _promptAddRoom,
           ),
         ],
@@ -133,7 +191,8 @@ class _PiecesScreenState extends State<PiecesScreen> {
                           Icon(
                             Icons.meeting_room_outlined,
                             size: 56,
-                            color: context.smartColors.textSecondary.withValues(alpha: 0.9),
+                            color: context.smartColors.textSecondary
+                                .withValues(alpha: 0.9),
                           ),
                           const SizedBox(height: 16),
                           Text(
@@ -141,7 +200,8 @@ class _PiecesScreenState extends State<PiecesScreen> {
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium
-                                ?.copyWith(color: context.smartColors.textPrimary),
+                                ?.copyWith(
+                                    color: context.smartColors.textPrimary),
                           ),
                           const SizedBox(height: 12),
                           if (_canAddRoom)
@@ -151,7 +211,9 @@ class _PiecesScreenState extends State<PiecesScreen> {
                             )
                           else
                             Text(
-                              'Contactez votre administrateur pour ajouter des pièces.',
+                              AuthService.instance.canAddDevices
+                                  ? 'Ajoute une pièce avec le bouton + ci-dessus.'
+                                  : 'Contactez le propriétaire pour ajouter des pièces.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: context.smartColors.textSecondary,
@@ -164,7 +226,7 @@ class _PiecesScreenState extends State<PiecesScreen> {
                 }
 
                 return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: context.responsive.listPadding,
                   itemCount: rooms.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
@@ -194,9 +256,24 @@ class _PiecesScreenState extends State<PiecesScreen> {
                             fontSize: 12,
                           ),
                         ),
-                        trailing: Icon(
-                          Icons.chevron_right_rounded,
-                          color: context.smartColors.textSecondary,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_canAddRoom)
+                              IconButton(
+                                icon: Icon(
+                                  Icons.edit_outlined,
+                                  color: context.smartColors.textSecondary,
+                                  size: 20,
+                                ),
+                                tooltip: 'Renommer',
+                                onPressed: () => _promptRenameRoom(room),
+                              ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: context.smartColors.textSecondary,
+                            ),
+                          ],
                         ),
                         onTap: widget.onOpenDashboard,
                       ),

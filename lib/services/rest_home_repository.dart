@@ -39,6 +39,11 @@ class RestHomeRepository implements HomeRepository {
   }
 
   @override
+  Stream<bool> watchHouseOnline() {
+    return Stream<bool>.value(false);
+  }
+
+  @override
   Future<void> sendDeviceCommand(String deviceId, Map<String, dynamic> patch) {
     return Future<void>.error(
       UnimplementedError(
@@ -51,6 +56,13 @@ class RestHomeRepository implements HomeRepository {
   Future<String> addRoom(String name) {
     return Future<String>.error(
       UnimplementedError('POST $baseUrl/rooms — à implémenter.'),
+    );
+  }
+
+  @override
+  Future<void> renameRoom(String roomId, String newName) {
+    return Future<void>.error(
+      UnimplementedError('PATCH $baseUrl/rooms/$roomId — à implémenter.'),
     );
   }
 
@@ -78,9 +90,17 @@ class RestHomeRepository implements HomeRepository {
   }
 
   @override
+  @override
+  Future<void> updateDevicePiece(String deviceId, String roomId) {
+    return Future<void>.error(
+      UnimplementedError('PATCH device piece — à implémenter.'),
+    );
+  }
+
   Future<void> updateDevicePin(String deviceId, int pin) {
     return Future<void>.error(
-      UnimplementedError('PATCH $baseUrl/devices/$deviceId/pin — à implémenter.'),
+      UnimplementedError(
+          'PATCH $baseUrl/devices/$deviceId/pin — à implémenter.'),
     );
   }
 

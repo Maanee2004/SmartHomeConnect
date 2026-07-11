@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// Type d’appareil placable sur le plan (icône palette).
 enum PlanDeviceKind {
   lamp,
-  fan,
+  relay,
   outlet,
   camera,
 }
@@ -12,8 +12,9 @@ PlanDeviceKind? parsePlanDeviceKind(String? s) {
   switch (s) {
     case 'lamp':
       return PlanDeviceKind.lamp;
-    case 'fan':
-      return PlanDeviceKind.fan;
+    case 'relay':
+    case 'fan': // legacy
+      return PlanDeviceKind.relay;
     case 'outlet':
       return PlanDeviceKind.outlet;
     case 'camera':
@@ -28,8 +29,8 @@ extension PlanDeviceKindX on PlanDeviceKind {
     switch (this) {
       case PlanDeviceKind.lamp:
         return Icons.lightbulb_rounded;
-      case PlanDeviceKind.fan:
-        return Icons.air_rounded;
+      case PlanDeviceKind.relay:
+        return Icons.power_rounded;
       case PlanDeviceKind.outlet:
         return Icons.power_rounded;
       case PlanDeviceKind.camera:
@@ -41,8 +42,8 @@ extension PlanDeviceKindX on PlanDeviceKind {
     switch (this) {
       case PlanDeviceKind.lamp:
         return 'lamp';
-      case PlanDeviceKind.fan:
-        return 'fan';
+      case PlanDeviceKind.relay:
+        return 'relay';
       case PlanDeviceKind.outlet:
         return 'outlet';
       case PlanDeviceKind.camera:

@@ -1,8 +1,11 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
-import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/widgets/app_brand_header.dart';
 import 'package:smart_home/widgets/custom_text_field.dart';
@@ -56,6 +59,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   String get _fullPhone =>
       '${_countryCodes[_selectedCountry]}${_phoneController.text.trim()}';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_warmUpFirebase());
+  }
+
+  Future<void> _warmUpFirebase() async {
+    if (Firebase.apps.isEmpty) return;
+    await FirebaseAnonymousAuth.trySignIn();
+  }
+
+  Future<bool> _ensureFirebaseReady() async {
+    if (Firebase.apps.isEmpty) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Firebase non initialisé. Rechargez la page ou relancez l’application.',
+          ),
+        ),
+      );
+      return false;
+    }
+    await FirebaseAnonymousAuth.trySignIn();
+    return true;
+  }
 
   @override
   void dispose() {
@@ -188,6 +218,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _submitting = true);
     try {
+      if (!await _ensureFirebaseReady()) return;
+
       final displayName =
           [firstName, lastName].where((e) => e.isNotEmpty).join(' ');
       final user = await FirestoreAuthRepository.instance.register(
@@ -197,12 +229,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         plainPassword: password,
       );
       await AuthService.instance.saveSession(user);
-      await FirestoreHomeRepository.bootstrap();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ton compte a été créé avec succès')),
-      );
     } on AuthFailure catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -16,10 +16,10 @@ class Dashboard extends StatelessWidget {
     ),
     Device(
       id: 'd2',
-      name: 'Ventilateur',
+      name: 'Relais',
       roomId: 'r1',
-      type: 'FAN',
-      state: const {'isOn': false, 'speed': 0},
+      type: 'RELAIS',
+      state: const {'isOn': false},
     ),
   ];
 

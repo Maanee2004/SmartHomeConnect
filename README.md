@@ -1,97 +1,182 @@
-# Smart Home — Architecture IoT temps réel (Event‑Driven)
+# Smart Home Connect
 
-Ce repo contient une **infrastructure IoT de bout en bout en temps réel**.  
-Objectif: **éviter le polling** (interroger la DB toutes les X secondes) en utilisant un modèle **Event‑Driven** (piloté par les événements).
+Application mobile **Flutter** de gestion de maison connectée — projet académique aligné sur un diagramme de classes UML et une base **Firebase Firestore**.
 
-## Résumé de l’architecture (ce qui est fait)
+**Smart Home Connect** permet de piloter pièces et appareils IoT (capteurs + actionneurs), gérer les utilisateurs (interface admin) et préparer l’intégration Arduino via Firestore comme source de vérité.
 
-Pipeline de communication:
+---
 
-Flutter App ↔ Firebase Firestore ↔ Node.js (Bridge) ↔ MQTT Broker (HiveMQ) ↔ ESP32 ↔ Arduino Mega
+## Sommaire
 
-Points clés:
-- **Firestore = source de vérité** pour l’état souhaité + historique
-- **Node bridge** écoute Firestore en push et publie sur MQTT
-- Le matériel répond via un topic MQTT de feedback (pour confirmer la réception)
+| Document | Contenu |
+|----------|---------|
+| [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) | Documentation technique complète |
+| [docs/FIRESTORE.md](docs/FIRESTORE.md) | Schéma base de données + exemples JSON |
+| [docs/GUIDE.md](docs/GUIDE.md) | Guide utilisateur et administrateur |
 
-## Specs techniques
+---
 
-### A) Stockage — Firebase Firestore (source de vérité)
+## Stack technique
 
-Structure attendue:
-- **Collection** `maison`
-  - **Document** `led_status`
-    - champ `etat`: `0` ou `1`
-  - **Document** `device_status`
-    - champ `online`: `true/false` (supervision online/offline)
-- **Collection** `historique_maison`
-  - logs de chaque action (commande / feedback / LWT)
+| Couche | Technologie |
+|--------|-------------|
+| Application | **Flutter** (Dart 3+) — Android, iOS, Web |
+| Base de données | **Cloud Firestore** |
+| Auth technique Firebase | **Firebase Auth anonyme** (accès Firestore) |
+| Auth applicative | Collection `users` + mot de passe **bcrypt** |
+| Backend IoT (prévu) | **Node.js** + MQTT (`backend/node-bridge/`) |
+| Matériel (prévu) | Arduino Mega + ESP32 |
 
-Mécanisme:
-- côté bridge: écoute “temps réel” (snapshot)
-- côté Flutter: stream Firestore (push)
+---
 
-### B) Transport — MQTT (HiveMQ)
+## Démarrage rapide
 
-Broker (TLS):
-- host: `broker.hivemq.com`
-- port: `8883`
+### Prérequis
 
-Topics:
-- **Commande**: `maison/led`
-  - payload: `"1"` (ON), `"0"` (OFF)
-- **Feedback**: `maison/led/status`
-  - payload libre (ex: `"ACK"`, `"1"`, etc.)
-- **Online/Offline (LWT)**: `maison/online`
-  - payload: `"1"` (online), `"0"` (offline)
+- Flutter SDK ≥ 3.0
+- Compte Firebase + projet configuré (`flutterfire configure`)
+- Fichiers : `android/app/google-services.json`, `lib/firebase_options.dart`
 
-### C) Middleware — Node.js bridge (orchestrateur)
+### Installation
 
-Le bridge ne “dort” jamais:
-- Firestore → MQTT: quand `maison/led_status.etat` change, publish sur `maison/led`
-- MQTT → Firestore:
-  - `maison/led/status` → met à jour `maison/led_status.last_ack`
-  - `maison/online` → met à jour `maison/device_status.online`
-  - ajoute un log dans `historique_maison`
+```bash
+git clone <url-du-repo>
+cd smart_home
+flutter pub get
+flutter run
+```
 
-Code: `backend/node-bridge/`
+### Firebase
 
-### D) Hardware
+1. Activer **Firestore** et **Authentication** (méthode **Anonyme** activée).
+2. Déployer les règles :
 
-- **ESP32**: Wi‑Fi + TLS + MQTT, parse les payloads
-- **Arduino Mega**: reçoit les ordres via UART et pilote les actionneurs (LED, futurs relais)
+```bash
+firebase deploy --only firestore:rules
+```
 
-## Roadmap (PoC → produit)
+3. Créer un **admin** manuellement dans la console Firestore :
 
-### Mobile (Frontend)
-- Dashboard final: UI plus riche + capteurs (ex: température DHT22)
-- Feedback: afficher “online/offline” basé sur Firestore `device_status.online`
-- Afficher le dernier feedback matériel (ex: `led_status.last_ack`)
+```
+Collection : users/{userId}
+Champ      : role = "admin"
+```
 
-### Backend / Supervision
-- LWT complet côté ESP32 (broker notifie en cas de débranchement)
-- Sécurité: Firestore Rules pour limiter l’écriture à l’utilisateur authentifié
+Le `userId` est généré à l’inscription (ex. `usr_jean` pour `jean@mail.com`).
 
-### Hardware
-- UART final (ESP32 TX ↔ Mega RX)
-- Gestion erreurs: LED diagnostic sur ESP32 si Wi‑Fi perdu
+---
 
-## Lancer le bridge Node.js
+## Fonctionnalités principales
 
-Pré-requis:
-- Node.js >= 18
-- Un Service Account Firebase (fichier JSON)
+### Utilisateur (`role: user`)
 
-Dans `backend/node-bridge/`:
+- Connexion email ou téléphone + mot de passe
+- Dashboard : appareils par pièce, commandes ON/OFF
+- Ajout / renommage de pièces
+- Profil : thème, langue, police, taille de texte
+- Paramètres : cartes RFID autorisées
 
-1) Copier `.env.example` vers `.env` et renseigner `FIREBASE_SERVICE_ACCOUNT_PATH`.
-2) Installer les dépendances:
-   - `npm install`
-3) Lancer:
-   - `npm start`
+### Administrateur (`role: admin`)
 
-## Lancer l’app Flutter
+- Gestion des **maisons** et **utilisateurs**
+- CRUD appareils, broches GPIO, suppression pièces
+- Seed données de démo
+- Édition profil / mot de passe / rattachement maison
 
-Assure-toi d’avoir configuré Firebase sur Android/iOS (google-services / plist), puis:
-- `flutter pub get`
-- `flutter run`
+---
+
+## Arborescence Firestore (résumé)
+
+```
+Firestore Root
+ ├── users/{userId}
+ │    ├── preferences/settings   ← pièces, thème, membres
+ │    └── rfidCards/{cardId}     ← badges autorisés
+ ├── appareils/{sensorId}        ← capteurs + actionneurs
+ ├── accessLogs/{logId}          ← (schéma prêt, UI à venir)
+ └── alerts/{alertId}            ← (schéma prêt, UI à venir)
+```
+
+---
+
+## Types d’appareils supportés
+
+| Type | Rôle | Exemple `unit` |
+|------|------|----------------|
+| DHT | Température + humidité | `celsius/%` |
+| PIR | Mouvement | `booleen` |
+| RFID | Lecteur badge (UID) | `uid` |
+| ULTRA | Distance ultrason | `cm` |
+| RELAIS / LAMPE / MOTEUR | ON/OFF | `booleen` |
+| SERVO | Porte (lien RFID optionnel) | `booleen` |
+| MAX | Matrice LED MAX7219 | `booleen` |
+
+Détail des champs : [docs/FIRESTORE.md](docs/FIRESTORE.md).
+
+---
+
+## Structure du code (`lib/`)
+
+```
+lib/
+├── main.dart                 # Point d’entrée, routage login / user / admin
+├── models/                   # AppUser, Device, AppareilSpec, RfidCard…
+├── services/
+│   ├── firestore_home_repository.dart   # Pièces, appareils, commandes
+│   ├── firestore_auth_repository.dart   # Login, inscription, admin users
+│   ├── auth_service.dart                # Session locale + rôles
+│   └── rfid_cards_repository.dart       # Badges RFID
+├── screens/
+│   ├── auth/                 # Login, inscription
+│   ├── home/                 # Shell utilisateur (dashboard, pièces, profil)
+│   ├── dashboard/            # Grille appareils + ajout
+│   └── admin/                # Shell administrateur
+└── widgets/                  # DeviceCard, AppBrandHeader…
+```
+
+---
+
+## Tests
+
+```bash
+flutter test
+```
+
+Tests unitaires : `test/appareil_spec_test.dart` (schéma appareils, parsing Firestore).
+
+---
+
+## Backend Node (bridge MQTT)
+
+Le dossier `backend/node-bridge/` contient un orchestrateur Firestore ↔ MQTT pour l’Arduino. **Non branché en production** dans l’app Flutter actuelle (l’app écrit directement dans Firestore).
+
+```bash
+cd backend/node-bridge
+cp .env.example .env
+npm install
+npm start
+```
+
+---
+
+## État d’avancement
+
+| Zone | État |
+|------|------|
+| Auth + rôles user/admin | ✅ |
+| CRUD pièces / appareils | ✅ |
+| Temps réel Firestore | ✅ |
+| Cartes RFID | ✅ |
+| Schéma ULTRA, MAX, SERVO, DHT… | ✅ |
+| Règles Firestore sécurisées | ⚠️ Ouvertes (`if true`) — prod à durcir |
+| Bridge Arduino / MQTT live | 🔜 Équipe hardware |
+| accessLogs, alerts (UI) | 🔜 |
+| API REST (`rest_home_repository`) | Stub non utilisé |
+
+---
+
+## Licence & contexte
+
+Projet académique — soutenance / mémoire maison connectée.
+
+Pour le détail technique complet : **[docs/DOCUMENTATION.md](docs/DOCUMENTATION.md)**.

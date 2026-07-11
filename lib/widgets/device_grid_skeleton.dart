@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
 /// Placeholders animés pour la grille d’appareils pendant le chargement.
@@ -27,16 +28,12 @@ class _DeviceGridSkeletonState extends State<DeviceGridSkeleton>
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
+    final r = context.responsive;
     return GridView.builder(
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
-      itemCount: widget.itemCount,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.78,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
+      itemCount: widget.itemCount > 0 ? widget.itemCount : r.skeletonGridCount,
+      gridDelegate: r.deviceGridDelegate,
       itemBuilder: (_, __) {
         return AnimatedBuilder(
           animation: _c,

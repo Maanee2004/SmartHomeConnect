@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
 /// Barre de navigation basse style smartphone : icône + libellé.
@@ -25,6 +26,9 @@ class DashboardBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
+    final r = context.responsive;
+    final iconSize = r.iconSize(26);
+    final labelSize = r.fontSize(11);
 
     return Material(
       color: c.scaffoldBackground,
@@ -47,6 +51,8 @@ class DashboardBottomBar extends StatelessWidget {
                     child: _BottomNavItem(
                       item: _items[i],
                       selected: selectedIndex == i,
+                      iconSize: iconSize,
+                      labelSize: labelSize,
                       onPressed: () => onSelect(i),
                     ),
                   ),
@@ -70,11 +76,15 @@ class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.item,
     required this.selected,
+    required this.iconSize,
+    required this.labelSize,
     required this.onPressed,
   });
 
   final _NavItem item;
   final bool selected;
+  final double iconSize;
+  final double labelSize;
   final VoidCallback onPressed;
 
   @override
@@ -92,13 +102,13 @@ class _BottomNavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(item.icon, color: color, size: 26),
+              Icon(item.icon, color: color, size: iconSize),
               const SizedBox(height: 4),
               Text(
                 item.label,
                 style: TextStyle(
                   color: color,
-                  fontSize: 11,
+                  fontSize: labelSize,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
                 maxLines: 1,

@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_home/models/app_user.dart';
 import 'package:smart_home/models/user_role.dart';
+import 'package:smart_home/services/firestore_home_repository.dart';
+import 'package:smart_home/services/house_invites_repository.dart';
 import 'package:smart_home/services/user_preferences_service.dart';
 
-/// Session locale + rôle (`admin` / `user`) pour router l’interface.
+/// Session locale + rôle (`admin` / `owner` / `user`) pour router l’interface.
 class AuthService {
   static const String _cachedUserNameKey = 'cached_user_name';
   static const String _cachedUserIdKey = 'cached_user_id';
@@ -34,13 +36,41 @@ class AuthService {
   String get currentRole => _role;
   String? get houseOwnerUserId => _houseOwnerUserId;
   bool get isLoggedIn => _userId != null && _userId!.isNotEmpty;
+
+  /// Admin plateforme (interface admin globale).
   bool get isAdmin => UserRole.isAdmin(_role);
 
-  /// Ajout de pièces — tout utilisateur connecté.
-  bool get canAddRooms => isLoggedIn;
+  /// Rôle propriétaire enregistré dans Firestore.
+  bool get isOwnerRole => UserRole.isOwner(_role);
 
-  /// CRUD appareils / broches / suppression pièces — réservé aux admins.
-  bool get canManageDevices => isAdmin;
+  /// Membre rattaché à la maison d’un autre utilisateur.
+  bool get isMember =>
+      _houseOwnerUserId != null && _houseOwnerUserId!.isNotEmpty;
+
+  /// Propriétaire de sa propre maison (rôle `owner` explicite, assigné par l’admin).
+  bool get isHouseOwner {
+    if (isMember || isAdmin) return false;
+    return UserRole.isOwner(_role);
+  }
+
+  String get roleLabel => UserRole.label(_role);
+
+  /// Rejoint une maison avec un code (utilisateur standard non membre).
+  bool get canJoinHouse =>
+      isLoggedIn && !isAdmin && !isHouseOwner && !isMember;
+
+  /// Gère les codes et membres invités.
+  bool get canManageInvites => isHouseOwner;
+
+  /// Pièces — utilisateur connecté (sauf membre invité).
+  bool get canAddRooms =>
+      isLoggedIn && !isMember && (isAdmin || isHouseOwner || UserRole.isUser(_role));
+
+  /// CRUD complet — admin plateforme ou propriétaire (suppression, broches, seed).
+  bool get canManageDevices => isAdmin || isHouseOwner;
+
+  /// Ajouter / déplacer des appareils — utilisateurs standards (pas les invités).
+  bool get canAddDevices => canAddRooms;
 
   /// Alias legacy (appareils / seed démo).
   bool get canManageHome => canManageDevices;
@@ -60,8 +90,7 @@ class AuthService {
         owner != null && owner.isNotEmpty ? owner : null;
     authNotifier.value = isLoggedIn;
     if (isLoggedIn) {
-      final scopeId = _houseOwnerUserId ?? _userId!;
-      await UserPreferencesService.instance.loadFromFirestore(scopeId);
+      await UserPreferencesService.instance.loadFromFirestore(_userId!);
     }
   }
 
@@ -91,9 +120,13 @@ class AuthService {
       await prefs.remove(_cachedHouseOwnerKey);
     }
     await setCachedUserName(user.name);
-    final scopeId = _houseOwnerUserId ?? user.userId;
-    await UserPreferencesService.instance.loadFromFirestore(scopeId);
     _notifyAuthChanged();
+    unawaited(UserPreferencesService.instance.loadFromFirestore(user.userId));
+    unawaited(FirestoreHomeRepository.instance.resetAndReload());
+    if (UserRole.isOwner(user.role) &&
+        (user.houseOwnerUserId == null || user.houseOwnerUserId!.isEmpty)) {
+      unawaited(HouseInvitesRepository.instance.ensurePrimaryInvite(user.userId));
+    }
   }
 
   Future<void> setCachedUserName(String name) async {
@@ -106,6 +139,14 @@ class AuthService {
     }
     await prefs.setString(_cachedUserNameKey, t);
     if (!_updates.isClosed) _updates.add(t);
+  }
+
+  /// Recharge le profil Firestore (ex. après rejoindre / quitter une maison).
+  Future<void> refreshFromFirestore(Future<AppUser?> Function(String userId) fetchUser) async {
+    final id = _userId;
+    if (id == null || id.isEmpty) return;
+    final user = await fetchUser(id);
+    if (user != null) await saveSession(user);
   }
 
   Future<void> clearSession() async {

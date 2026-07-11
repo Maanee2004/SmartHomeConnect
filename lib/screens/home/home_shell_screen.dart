@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/screens/dashboard/dashboard_screen.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
+import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/screens/home/pieces_screen.dart';
 import 'package:smart_home/screens/home/profile_screen.dart';
 import 'package:smart_home/screens/home/settings_screen.dart';
@@ -31,30 +33,40 @@ class _HomeShellScreenState extends State<HomeShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const SafeArea(
-          bottom: false,
-          child: AppBrandHeader(compact: true, showTagline: false),
-        ),
-        Expanded(
-          child: IndexedStack(
-      index: _tab,
-      children: [
-        DashboardScreen(
-          bottomNavigationBar: _bottomBar(),
-          onGoHome: () => _selectTab(0),
-        ),
-        PiecesScreen(
-          bottomNavigationBar: _bottomBar(),
-          onOpenDashboard: () => _selectTab(0),
-        ),
-        ProfileScreen(bottomNavigationBar: _bottomBar()),
-        SettingsScreen(bottomNavigationBar: _bottomBar()),
-      ],
+    return Scaffold(
+      backgroundColor: context.smartColors.scaffoldBackground,
+      body: Column(
+        children: [
+          const SafeArea(
+            bottom: false,
+            child: AppBrandHeader(compact: true, showTagline: false),
           ),
-        ),
-      ],
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: context.responsive.maxContentWidth,
+                ),
+                child: IndexedStack(
+                  index: _tab,
+                  children: [
+                    DashboardScreen(
+                      bottomNavigationBar: _bottomBar(),
+                      onGoHome: () => _selectTab(0),
+                    ),
+                    PiecesScreen(
+                      bottomNavigationBar: _bottomBar(),
+                      onOpenDashboard: () => _selectTab(0),
+                    ),
+                    ProfileScreen(bottomNavigationBar: _bottomBar()),
+                    SettingsScreen(bottomNavigationBar: _bottomBar()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

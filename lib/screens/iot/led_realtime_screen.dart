@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/models/device.dart';
-import 'package:smart_home/services/firestore_schema.dart';
+import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/firestore_house_paths.dart';
 import 'package:smart_home/widgets/device_card.dart';
 
 class LedRealtimeScreen extends StatefulWidget {
@@ -15,16 +16,24 @@ class LedRealtimeScreen extends StatefulWidget {
 class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
   bool _isSending = false;
 
-  DocumentReference<Map<String, dynamic>> get _ledDoc =>
-      FirebaseFirestore.instance
-          .collection(FirestoreSchema.appareilsCollection)
-          .doc('led_status');
+  DocumentReference<Map<String, dynamic>>? get _ledDoc {
+    final userId = AuthService.instance.houseOwnerUserId ??
+        AuthService.instance.currentUserId;
+    if (userId == null || userId.isEmpty || Firebase.apps.isEmpty) {
+      return null;
+    }
+    return FirestoreHousePaths.appareils(
+      FirebaseFirestore.instance,
+      userId,
+    ).doc('led_status');
+  }
 
   Future<void> _setEtat(int nextEtat) async {
-    if (_isSending) return;
+    final ref = _ledDoc;
+    if (ref == null || _isSending) return;
     setState(() => _isSending = true);
     try {
-      await _ledDoc.set({'etat': nextEtat}, SetOptions(merge: true));
+      await ref.set({'etat': nextEtat}, SetOptions(merge: true));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -52,6 +61,7 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
   @override
   Widget build(BuildContext context) {
     final firebaseOk = Firebase.apps.isNotEmpty;
+    final ledRef = _ledDoc;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -62,21 +72,23 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: firebaseOk ? _ledDoc.snapshots() : const Stream.empty(),
+          stream: firebaseOk && ledRef != null
+              ? ledRef.snapshots()
+              : const Stream.empty(),
           builder: (context, snapshot) {
             final etat = (snapshot.data?.data()?['etat'] as int?) ?? 0;
             final isOn = etat == 1;
             return Center(
               child: DeviceCard(
                 device: Device(
-                  id: 'legacy-led',
+                  id: 'led_status',
                   name: 'Lampe salon',
                   roomId: '',
                   type: 'LIGHT',
                   state: {'isOn': isOn},
                   isOnline: firebaseOk,
                 ),
-                onCommand: !firebaseOk || _isSending
+                onCommand: !firebaseOk || _isSending || ledRef == null
                     ? (_) async {}
                     : (patch) async {
                         final wantOn = patch['isOn'] == true;

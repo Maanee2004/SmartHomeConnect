@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/screens/auth/register_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
-import 'package:smart_home/services/firestore_home_repository.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/widgets/app_brand_header.dart';
 import 'package:smart_home/widgets/custom_text_field.dart';
@@ -69,6 +73,23 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    unawaited(_warmUpFirebase());
+  }
+
+  Future<void> _warmUpFirebase() async {
+    if (Firebase.apps.isEmpty) return;
+    await FirebaseAnonymousAuth.trySignIn();
+  }
+
+  Future<bool> _ensureFirebaseReady() async {
+    if (Firebase.apps.isEmpty) {
+      _showLoginError(
+        'Firebase non initialisé. Rechargez la page ou relancez l’application.',
+      );
+      return false;
+    }
+    await FirebaseAnonymousAuth.trySignIn();
+    return true;
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -219,6 +240,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _submitting = true);
     try {
+      if (!await _ensureFirebaseReady()) return;
+
       final user = await FirestoreAuthRepository.instance.login(
         email: _useEmail ? email : null,
         phone: _useEmail ? null : _fullPhone,
@@ -226,20 +249,32 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       await _saveCredentialsPreference();
       await AuthService.instance.saveSession(user);
-      await FirestoreHomeRepository.bootstrap();
+      // Navigation immédiate via authNotifier ; rechargement Firestore en arrière-plan.
     } on AuthFailure catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
+      _showLoginError(e.message);
+    } on TimeoutException {
+      if (!mounted) return;
+      _showLoginError(
+        'Délai dépassé. Vérifie ta connexion internet et réessaie.',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de connexion : $e')),
-      );
+      _showLoginError('Erreur de connexion : $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _showLoginError(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Widget _modeToggle() {
@@ -340,10 +375,17 @@ class _LoginScreenState extends State<LoginScreen> {
           Expanded(
             child: Center(
               child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: EdgeInsets.symmetric(
+                horizontal: context.responsive.horizontalPadding,
+                vertical: context.responsive.scale(16),
+              ),
               child: Container(
-                constraints: const BoxConstraints(maxWidth: 420),
-                padding: const EdgeInsets.all(20),
+                constraints: BoxConstraints(
+                  maxWidth: context.responsive.isTablet
+                      ? 480
+                      : context.responsive.width - 24,
+                ),
+                padding: EdgeInsets.all(context.responsive.scale(20)),
                 decoration: BoxDecoration(
                   color: c.card,
                   borderRadius: BorderRadius.circular(20),

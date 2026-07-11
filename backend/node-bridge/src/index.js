@@ -1,200 +1,215 @@
-import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 
-import "dotenv/config";
 import admin from "firebase-admin";
 import mqtt from "mqtt";
 
-function requireEnv(name) {
-  const v = process.env[name];
-  if (!v || String(v).trim() === "") {
-    throw new Error(`Missing env var: ${name}`);
-  }
-  return v;
-}
+import {
+  evaluateSensorChange,
+  isActuator,
+  isSensor,
+  stringifyValeur,
+} from "./alerts.js";
+import { loadConfig, loadServiceAccount } from "./config.js";
 
-function toInt01(value) {
-  if (value === 0 || value === 1) return value;
-  if (value === true) return 1;
-  if (value === false) return 0;
-  if (typeof value === "string") {
-    const s = value.trim();
-    if (s === "1" || s.toLowerCase() === "on" || s.toLowerCase() === "true")
-      return 1;
-    if (s === "0" || s.toLowerCase() === "off" || s.toLowerCase() === "false")
-      return 0;
-  }
-  return null;
-}
-
-const serviceAccountPath = requireEnv("FIREBASE_SERVICE_ACCOUNT_PATH");
-const homeId = process.env.FIRESTORE_HOME_ID || "maison";
-
-const mqttHost = process.env.MQTT_HOST || "broker.hivemq.com";
-const mqttPort = Number(process.env.MQTT_PORT || "8883");
-const mqttUsername = process.env.MQTT_USERNAME || undefined;
-const mqttPassword = process.env.MQTT_PASSWORD || undefined;
-const mqttClientId = process.env.MQTT_CLIENT_ID || "smart-home-bridge";
-
-const topicCommand = process.env.MQTT_TOPIC_COMMAND || "maison/led";
-const topicFeedback = process.env.MQTT_TOPIC_FEEDBACK || "maison/led/status";
-const topicLwt = process.env.MQTT_TOPIC_LWT || "maison/online";
-
-const serviceAccountAbs = path.isAbsolute(serviceAccountPath)
-  ? serviceAccountPath
-  : path.resolve(process.cwd(), serviceAccountPath);
-
-if (!fs.existsSync(serviceAccountAbs)) {
-  throw new Error(
-    `Service account JSON not found: ${serviceAccountAbs}\n` +
-      `Download it from Firebase Console -> Project settings -> Service accounts.`
-  );
-}
+const config = loadConfig();
+const { houseUserId, alertCooldownMs, defaultTempThreshold, mqtt: mqttCfg } =
+  config;
 
 admin.initializeApp({
-  credential: admin.credential.cert(
-    JSON.parse(fs.readFileSync(serviceAccountAbs, "utf8"))
-  ),
+  credential: admin.credential.cert(loadServiceAccount()),
 });
 
 const db = admin.firestore();
-const ledRef = db.collection(homeId).doc("led_status");
-const deviceStatusRef = db.collection(homeId).doc("device_status");
-const historyCol = db.collection(`historique_${homeId}`);
+const FieldValue = admin.firestore.FieldValue;
 
-const client = mqtt.connect({
-  host: mqttHost,
-  port: mqttPort,
-  protocol: "mqtts",
-  username: mqttUsername,
-  password: mqttPassword,
-  clientId: mqttClientId,
-  keepalive: 30,
-  reconnectPeriod: 2000,
-  clean: true,
-  will: {
-    topic: topicLwt,
-    payload: "0",
-    qos: 1,
-    retain: true,
-  },
-});
+const appareilsCol = db
+  .collection("maisons")
+  .doc(houseUserId)
+  .collection("appareils");
 
-let lastPublishedEtat = null;
+const isonlineRef = db
+  .collection("maisons")
+  .doc(houseUserId)
+  .collection("isonline")
+  .doc("isonline");
 
-async function logHistory(event) {
-  await historyCol.add({
-    ...event,
-    ts: admin.firestore.FieldValue.serverTimestamp(),
+/** @type {Map<string, string>} */
+const lastValeurByDoc = new Map();
+
+const alertOpts = { cooldownMs: alertCooldownMs, defaultTempThreshold };
+
+function publishMqtt(client, topic, payload) {
+  client.publish(topic, payload, { qos: 1, retain: false }, (err) => {
+    if (err) console.error("[MQTT] publish error", topic, err.message ?? err);
+    else console.log("[MQTT]", topic, "->", payload);
   });
 }
 
-client.on("connect", async () => {
-  console.log(`[MQTT] connected ${mqttHost}:${mqttPort}`);
-  client.publish(topicLwt, "1", { qos: 1, retain: true });
-  await deviceStatusRef.set({ online: true }, { merge: true });
+async function setHouseOnline(online) {
+  await isonlineRef.set(
+    { isonline: online, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+}
 
-  client.subscribe([topicFeedback, topicLwt], { qos: 1 }, (err) => {
-    if (err) console.error("[MQTT] subscribe error", err);
-    else console.log("[MQTT] subscribed", topicFeedback, topicLwt);
-  });
-});
-
-client.on("reconnect", () => console.log("[MQTT] reconnecting..."));
-
-client.on("close", async () => {
-  console.log("[MQTT] connection closed");
-  await deviceStatusRef.set({ online: false }, { merge: true });
-});
-
-client.on("error", (err) => console.error("[MQTT] error", err));
-
-client.on("message", async (topic, payloadBuf) => {
-  const payload = payloadBuf.toString("utf8");
-  if (topic === topicLwt) {
-    const online = payload.trim() === "1";
-    await deviceStatusRef.set({ online }, { merge: true });
-    await logHistory({ source: "mqtt", type: "lwt", online, payload });
+async function applySensorMqttPayload(payloadText) {
+  let msg;
+  try {
+    msg = JSON.parse(payloadText);
+  } catch {
+    console.warn("[MQTT] sensor payload JSON invalide:", payloadText);
     return;
   }
 
-  if (topic === topicFeedback) {
-    await ledRef.set(
-      { last_ack: payload.trim(), last_ack_at: admin.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    );
-    await logHistory({ source: "mqtt", type: "feedback", payload });
+  const appareilId = String(msg.id ?? msg.appareilId ?? "").trim();
+  if (!appareilId) {
+    console.warn("[MQTT] sensor sans id:", payloadText);
+    return;
   }
-});
 
-// Firestore -> MQTT (onSnapshot equivalent in Admin SDK)
-ledRef.onSnapshot(
-  async (snap) => {
-    const data = snap.data() || {};
-    const etat = toInt01(data.etat);
-    if (etat == null) return;
-    if (etat === lastPublishedEtat) return;
+  const patch = {
+    userId: houseUserId,
+    valeur: msg.valeur ?? msg.value ?? "0",
+    timestamp: FieldValue.serverTimestamp(),
+  };
+  if (msg.type) patch.type = String(msg.type).trim().toUpperCase();
+  if (msg.piece) patch.piece = String(msg.piece).trim();
+  if (msg.label) patch.label = String(msg.label).trim();
+  if (msg.categorie) patch.categorie = String(msg.categorie).trim();
 
-    lastPublishedEtat = etat;
-    const payload = String(etat);
-    client.publish(topicCommand, payload, { qos: 1, retain: false }, async (err) => {
-      if (err) console.error("[MQTT] publish error", err);
-      else console.log(`[MQTT] publish ${topicCommand} -> ${payload}`);
-    });
+  const ref = appareilsCol.doc(appareilId);
+  await ref.set(patch, { merge: true });
+  // Les alertes sont évaluées par l’écoute Firestore (évite les doublons).
+}
 
-    await logHistory({ source: "firestore", type: "command", etat });
-  },
-  (err) => console.error("[Firestore] snapshot error", err)
-);
+async function handleAppareilChange(client, change) {
+  if (change.type === "removed") {
+    lastValeurByDoc.delete(change.doc.id);
+    return;
+  }
 
-const topicGpio = process.env.MQTT_TOPIC_GPIO || "maison/gpio";
-const appareilsCol = db.collection("appareils");
-const lastValeurByDoc = new Map();
+  const appareilId = change.doc.id;
+  const data = change.doc.data() ?? {};
+  const valeur = data.valeur;
+  if (valeur == null) return;
 
-appareilsCol.onSnapshot(
-  async (snap) => {
-    for (const change of snap.docChanges()) {
-      if (change.type === "removed") {
-        lastValeurByDoc.delete(change.doc.id);
-        continue;
-      }
-      const data = change.doc.data() || {};
-      const pinRaw = data.pin;
-      const valeur = data.valeur;
-      if (pinRaw == null || valeur == null) continue;
-      const pin = Number(pinRaw);
-      if (!Number.isFinite(pin)) continue;
+  const serialized = stringifyValeur(valeur);
+  const prev = lastValeurByDoc.get(appareilId);
+  if (prev === serialized) return;
+  lastValeurByDoc.set(appareilId, serialized);
 
-      const key = change.doc.id;
-      const prev = lastValeurByDoc.get(key);
-      const serialized =
-        typeof valeur === "number" ? valeur : JSON.stringify(valeur);
-      if (prev != null && prev.pin === pin && prev.valeur === serialized) continue;
-      lastValeurByDoc.set(key, { pin, valeur: serialized });
-
-      const payload = JSON.stringify({
-        id: change.doc.id,
+  if (isActuator(data)) {
+    const pin = Number(data.pin);
+    if (!Number.isFinite(pin)) return;
+    publishMqtt(
+      client,
+      mqttCfg.topicGpio,
+      JSON.stringify({
+        id: appareilId,
         pin,
         valeur,
         type: data.type,
-        categorie: data.categorie,
-      });
-      client.publish(topicGpio, payload, { qos: 1, retain: false }, (err) => {
-        if (err) console.error("[MQTT] gpio publish error", err);
-        else console.log(`[MQTT] ${topicGpio} -> ${payload}`);
-      });
-      await logHistory({
-        source: "firestore",
-        type: "appareil",
-        id: change.doc.id,
-        pin,
-        valeur,
-      });
+        categorie: data.categorie ?? "actionneur",
+      })
+    );
+    return;
+  }
+
+  if (isSensor(data)) {
+    await evaluateSensorChange(db, houseUserId, appareilId, data, alertOpts);
+  }
+}
+
+function startFirestoreListeners(client) {
+  let initialLoad = true;
+
+  appareilsCol.onSnapshot(
+    async (snap) => {
+      if (initialLoad) {
+        for (const doc of snap.docs) {
+          const data = doc.data() ?? {};
+          if (data.valeur != null) {
+            lastValeurByDoc.set(doc.id, stringifyValeur(data.valeur));
+          }
+        }
+        initialLoad = false;
+        console.log(
+          `[Firestore] état initial — ${lastValeurByDoc.size} appareil(s)`
+        );
+        return;
+      }
+
+      for (const change of snap.docChanges()) {
+        try {
+          await handleAppareilChange(client, change);
+        } catch (err) {
+          console.error("[Firestore] appareil change error", err);
+        }
+      }
+    },
+    (err) => console.error("[Firestore] appareils snapshot error", err)
+  );
+
+  console.log(
+    `[Firestore] écoute maisons/${houseUserId}/appareils (+ alerts)`
+  );
+}
+
+function startMqttBridge() {
+  const client = mqtt.connect({
+    host: mqttCfg.host,
+    port: mqttCfg.port,
+    protocol: "mqtts",
+    username: mqttCfg.username,
+    password: mqttCfg.password,
+    clientId: mqttCfg.clientId,
+    keepalive: 30,
+    reconnectPeriod: 2000,
+    clean: true,
+  });
+
+  client.on("connect", () => {
+    console.log(`[MQTT] connecté ${mqttCfg.host}:${mqttCfg.port}`);
+    client.subscribe([mqttCfg.topicSensor, mqttCfg.topicLwt], { qos: 1 }, (err) => {
+      if (err) console.error("[MQTT] subscribe error", err);
+      else {
+        console.log("[MQTT] abonné", mqttCfg.topicSensor, mqttCfg.topicLwt);
+      }
+    });
+  });
+
+  client.on("reconnect", () => console.log("[MQTT] reconnexion…"));
+  client.on("error", (err) => console.error("[MQTT] error", err));
+
+  client.on("message", async (topic, payloadBuf) => {
+    const payload = payloadBuf.toString("utf8");
+    try {
+      if (topic === mqttCfg.topicLwt) {
+        const online = payload.trim() === "1";
+        await setHouseOnline(online);
+        console.log("[MQTT] ESP32", online ? "en ligne" : "hors ligne");
+        return;
+      }
+
+      if (topic === mqttCfg.topicSensor) {
+        await applySensorMqttPayload(payload);
+      }
+    } catch (err) {
+      console.error("[MQTT] message handler error", err);
     }
-  },
-  (err) => console.error("[Firestore] appareils error", err)
-);
+  });
 
-console.log("[Bridge] running (Firestore <-> MQTT, appareils ->", topicGpio, ")");
+  startFirestoreListeners(client);
 
+  console.log("[Bridge] actif — maison:", houseUserId);
+  console.log("[Bridge] capteurs MQTT ->", mqttCfg.topicSensor);
+  console.log("[Bridge] actionneurs Firestore ->", mqttCfg.topicGpio);
+  console.log("[Bridge] alertes -> maisons/" + houseUserId + "/alerts");
+}
+
+startMqttBridge();
+
+process.on("SIGINT", () => {
+  console.log("[Bridge] arrêt");
+  process.exit(0);
+});

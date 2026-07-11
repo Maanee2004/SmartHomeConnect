@@ -43,6 +43,8 @@ dependencies:
   shared_preferences: ^2.3.2
   connectivity_plus: ^7.1.1
   bcrypt: ^1.2.0
+  qr_flutter: ^4.1.0
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

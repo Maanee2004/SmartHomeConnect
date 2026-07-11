@@ -24,13 +24,13 @@ Future<void> main() async {
   }
   try {
     if (Firebase.apps.isNotEmpty) {
+      await AuthService.instance.initSession();
       await FirestoreHomeRepository.bootstrap();
     }
   } catch (e, st) {
     // ignore: avoid_print
     print('[Firestore] bootstrap: $e\n$st');
   }
-  await AuthService.instance.initSession();
   await UserPreferencesService.instance.init();
   runApp(const MyApp());
 }

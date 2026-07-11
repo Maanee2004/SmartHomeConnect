@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/screens/admin/admin_houses_screen.dart';
+import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/screens/admin/admin_profile_screen.dart';
 import 'package:smart_home/screens/admin/admin_users_screen.dart';
 import 'package:smart_home/widgets/admin_bottom_bar.dart';
@@ -30,23 +31,26 @@ class _AdminShellScreenState extends State<AdminShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const SafeArea(
-          bottom: false,
-          child: AppBrandHeader(compact: true, showTagline: false),
-        ),
-        Expanded(
-          child: IndexedStack(
-            index: _tab,
-            children: [
-              AdminHousesScreen(bottomNavigationBar: _bottomBar()),
-              AdminUsersScreen(bottomNavigationBar: _bottomBar()),
-              AdminProfileScreen(bottomNavigationBar: _bottomBar()),
-            ],
+    return Scaffold(
+      backgroundColor: context.smartColors.scaffoldBackground,
+      body: Column(
+        children: [
+          const SafeArea(
+            bottom: false,
+            child: AppBrandHeader(compact: true, showTagline: false),
           ),
-        ),
-      ],
+          Expanded(
+            child: IndexedStack(
+              index: _tab,
+              children: [
+                AdminHousesScreen(bottomNavigationBar: _bottomBar()),
+                AdminUsersScreen(bottomNavigationBar: _bottomBar()),
+                AdminProfileScreen(bottomNavigationBar: _bottomBar()),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

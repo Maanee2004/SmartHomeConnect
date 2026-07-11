@@ -565,7 +565,7 @@ class _FloorPlanEditorScreenState extends State<FloorPlanEditorScreen> {
       child: Tooltip(
         message: switch (kind) {
           PlanDeviceKind.lamp => 'Lampe',
-          PlanDeviceKind.fan => 'Ventilateur',
+          PlanDeviceKind.relay => 'Relais',
           PlanDeviceKind.outlet => 'Prise',
           PlanDeviceKind.camera => 'Caméra',
         },

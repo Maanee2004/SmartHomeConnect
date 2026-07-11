@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Schéma académique — collection racine `appareils` (SENSOR + ACTUATOR).
+/// Schéma académique — `maisons/{userId}/appareils` (capteurs + actionneurs).
 class AppareilSpec {
   AppareilSpec._();
 
@@ -24,61 +24,86 @@ class AppareilSpec {
   static const allowedCategories = {'actionneur', 'capteur'};
   static const minPin = 2;
   static const maxPin = 53;
-  static const minServoAngle = 0;
-  static const maxServoAngle = 180;
 
-  /// Types **exacts** attendus par l'Arduino (`extrairePin` / `CONFIG:`).
+  static const unitBooleen = 'booleen';
+  static const unitUid = 'uid';
+  static const unitCm = 'cm';
+  static const unitCelsiusPercent = 'celsius/%';
+
+  /// Types capteurs Arduino (`CONFIG:` / lecture).
   static const arduinoSensorTypes = {
+    'DHT',
     'DHT22',
     'DHT_TEMP',
     'DHT_HUM',
     'PIR',
     'RFID',
+    'ULTRA',
   };
-  static const arduinoActuatorTypes = {'RELAIS', 'LED', 'SERVO'};
-  static const unitBooleen = 'booleen';
-  static const unitString = 'string';
-  static const unitAngle = 'angle';
 
-  /// Libellés UI → valeur Firestore (MAJUSCULES strictes).
+  /// Types actionneurs Arduino.
+  static const arduinoActuatorTypes = {
+    'RELAIS',
+    'LAMPE',
+    'MOTEUR',
+    'LED',
+    'SERVO',
+    'MAX',
+  };
+
   static const uiSensorTypes = <String, String>{
-    'DHT22': 'Capteur DHT (temp. + humidité dans valeur)',
-    'DHT_TEMP': 'Capteur DHT (DHT_TEMP — temp./hum. dans valeur)',
-    'DHT_HUM': 'Humidité seule (legacy DHT_HUM)',
+    'DHT': 'Température / humidité (DHT)',
     'PIR': 'Mouvement (PIR)',
-    'RFID': 'Lecteur RFID',
+    'RFID': 'Lecteur RFID (UID badge)',
+    'ULTRA': 'Distance ultrason (HC-SR04)',
   };
 
-  /// Format Arduino / Firestore : température et humidité dans [fieldValeur].
+  static const uiActuatorTypes = <String, String>{
+    'RELAIS': 'Relais ON/OFF',
+    'LAMPE': 'Lampe',
+    'MOTEUR': 'Moteur DC',
+    'LED': 'LED directe',
+    'SERVO': 'Servomoteur porte (SERVO)',
+    'MAX': 'Matrice LED (MAX7219)',
+  };
+
   static String formatDhtValeur(num temperature, num humidity) =>
       '${temperature.toStringAsFixed(1)}/${humidity.toStringAsFixed(1)}';
 
-  static const uiActuatorTypes = <String, String>{
-    'RELAIS': 'Relais / lampe / prise (RELAIS)',
-    'LED': 'LED directe (LED)',
-    'SERVO': 'Servo porte (SERVO + rfid_cible)',
-  };
-
   static bool isSensorType(String type) {
     final t = type.toUpperCase().trim();
-    return t == 'DHT22' ||
+    return t == 'DHT' ||
+        t == 'DHT22' ||
         t == 'DHT_TEMP' ||
         t == 'DHT_HUM' ||
         t == 'PIR' ||
         t == 'RFID' ||
+        t == 'ULTRA' ||
         t == 'SENSOR_TEMP' ||
         t == 'HUMIDITY';
   }
 
-  /// Normalise vers un type capteur Arduino (sinon [ArgumentError]).
+  static bool isDhtType(String type) {
+    final t = type.toUpperCase().trim();
+    return t == 'DHT' ||
+        t == 'DHT22' ||
+        t == 'DHT_TEMP' ||
+        t == 'DHT_HUM' ||
+        t == 'SENSOR_TEMP' ||
+        t == 'TEMPERATURE' ||
+        t == 'TEMP';
+  }
+
+  /// Type Firestore canonique pour un **nouveau** capteur.
   static String canonicalSensorType(String raw) {
     switch (raw.toUpperCase().trim()) {
+      case 'DHT':
       case 'DHT22':
-        return 'DHT22';
       case 'SENSOR_TEMP':
       case 'TEMPERATURE':
       case 'DHT_TEMP':
-        return 'DHT_TEMP';
+      case 'TEMP':
+        return 'DHT';
       case 'DHT_HUM':
       case 'HUMIDITY':
         return 'DHT_HUM';
@@ -86,49 +111,52 @@ class AppareilSpec {
         return 'PIR';
       case 'RFID':
         return 'RFID';
+      case 'ULTRA':
+      case 'ULTRASON':
+      case 'HC-SR04':
+        return 'ULTRA';
       default:
         throw ArgumentError(
           'Type capteur non supporté: « $raw ». '
-          'Utilisez DHT22, DHT_TEMP, DHT_HUM, PIR ou RFID (MAJUSCULES).',
+          'Utilisez DHT, PIR, RFID ou ULTRA.',
         );
     }
   }
 
-  static bool isDhtCombinedType(String type) {
-    try {
-      return canonicalSensorType(type) == 'DHT22';
-    } catch (_) {
-      return false;
-    }
-  }
+  static bool isDhtCombinedType(String type) => isDhtType(type);
 
-  /// Normalise vers un type actionneur Arduino (sinon [ArgumentError]).
   static String canonicalActuatorType(String raw) {
     switch (raw.toUpperCase().trim()) {
-      case 'LIGHT':
-      case 'LAMPE':
-      case 'FAN':
-      case 'VENTILATEUR':
+      case 'RELAIS':
       case 'OUTLET':
       case 'PRISE':
-      case 'CAMERA':
-      case 'RELAIS':
+      case 'FAN':
+      case 'VENTILATEUR':
         return 'RELAIS';
+      case 'LAMPE':
+      case 'LIGHT':
+        return 'LAMPE';
+      case 'MOTEUR':
+      case 'MOTOR':
+        return 'MOTEUR';
       case 'LED':
         return 'LED';
       case 'SERVO':
       case 'SERVO_MOTEUR':
       case 'PORTE':
         return 'SERVO';
+      case 'MAX':
+      case 'MAX7219':
+      case 'MATRICE':
+        return 'MAX';
       default:
         throw ArgumentError(
           'Type actionneur non supporté: « $raw ». '
-          'Utilisez RELAIS, LED ou SERVO (MAJUSCULES).',
+          'Utilisez RELAIS, LAMPE, MOTEUR, LED, SERVO ou MAX.',
         );
     }
   }
 
-  /// Broche GPIO requise pour tous les types Arduino (CONFIG + commandes).
   static bool requiresPin(String type) {
     try {
       if (isSensorType(type)) {
@@ -144,24 +172,29 @@ class AppareilSpec {
 
   static String unitForSensorType(String canonicalType) {
     switch (canonicalType) {
+      case 'DHT':
       case 'DHT22':
-        return '°C/%';
       case 'DHT_TEMP':
-        return '°C';
+        return unitCelsiusPercent;
       case 'DHT_HUM':
         return '%';
       case 'PIR':
         return unitBooleen;
       case 'RFID':
-        return unitString;
+        return unitUid;
+      case 'ULTRA':
+        return unitCm;
       default:
         return '';
     }
   }
 
-  static String unitForActuatorType(String canonicalType) {
-    if (canonicalType == 'SERVO') return unitAngle;
-    return unitBooleen;
+  static String unitForActuatorType(String canonicalType) => unitBooleen;
+
+  static Object _normalizeValeur(Object raw) {
+    if (raw is String) return raw.trim();
+    if (raw is num) return raw == 0 || raw == 1 ? '${raw.toInt()}' : raw;
+    return raw;
   }
 
   static Map<String, dynamic> sensorPayload({
@@ -179,13 +212,14 @@ class AppareilSpec {
     validatePiece(piece);
     if (pin != null) validatePin(pin);
     final canonical = canonicalSensorType(type);
-    final isDht = canonical == 'DHT22' || canonical == 'DHT_TEMP';
-    final resolvedValeur = isDht && temperature is num && humidity is num
-        ? formatDhtValeur(temperature, humidity)
-        : valeur;
+    final isDht = isDhtType(canonical);
+    Object resolvedValeur = _normalizeValeur(valeur);
+    if (isDht && temperature is num && humidity is num) {
+      resolvedValeur = formatDhtValeur(temperature, humidity);
+    }
     return {
       fieldSensorId: appareilId,
-      fieldType: canonical,
+      fieldType: canonical == 'DHT_HUM' ? 'DHT_HUM' : canonical,
       fieldCategorie: 'capteur',
       fieldLabel: label.trim(),
       fieldValeur: resolvedValeur,
@@ -205,7 +239,7 @@ class AppareilSpec {
     required String type,
     required String label,
     required int pin,
-    int valeur = 0,
+    Object valeur = '0',
     required String userId,
     String? changedBy,
     String? rfidCible,
@@ -213,22 +247,14 @@ class AppareilSpec {
     validatePiece(piece);
     validatePin(pin);
     final canonical = canonicalActuatorType(type);
-    if (canonical == 'SERVO') {
-      validateValeurServo(valeur);
-      if (rfidCible == null || rfidCible.trim().isEmpty) {
-        throw ArgumentError(
-          'rfid_cible obligatoire pour SERVO (id du lecteur RFID lié).',
-        );
-      }
-    } else {
-      validateValeurActionneur(valeur);
-    }
+    final v = _actuatorValeurString(valeur);
+    validateValeurActionneur(v);
     return {
       fieldActuatorId: appareilId,
       fieldType: canonical,
       fieldCategorie: 'actionneur',
       fieldLabel: label.trim(),
-      fieldValeur: valeur,
+      fieldValeur: v,
       fieldUnit: unitForActuatorType(canonical),
       fieldPin: pin,
       fieldPiece: piece.trim(),
@@ -236,14 +262,25 @@ class AppareilSpec {
       fieldLastChanged: FieldValue.serverTimestamp(),
       if (changedBy != null && changedBy.isNotEmpty)
         fieldChangedBy: changedBy,
-      if (canonical == 'SERVO')
-        fieldRfidCible: rfidCible!.trim(),
+      if (canonical == 'SERVO') fieldRfidCible: (rfidCible ?? '').trim(),
     };
+  }
+
+  static String _actuatorValeurString(Object raw) {
+    if (raw is String) {
+      final t = raw.trim();
+      if (t == '0' || t == '1') return t;
+      final n = int.tryParse(t);
+      if (n == 0 || n == 1) return '$n';
+    }
+    if (raw is num) return raw == 0 ? '0' : '1';
+    if (raw is bool) return raw ? '1' : '0';
+    return '0';
   }
 
   static void validatePiece(String piece) {
     if (piece.trim().isEmpty) {
-      throw ArgumentError('piece requis (ex: Salon, Chambre)');
+      throw ArgumentError('piece requis (ex: Salon, garage)');
     }
   }
 
@@ -253,17 +290,10 @@ class AppareilSpec {
     }
   }
 
-  static void validateValeurActionneur(int valeur) {
-    if (valeur != 0 && valeur != 1) {
-      throw ArgumentError('valeur actionneur : 0 ou 1');
-    }
-  }
-
-  static void validateValeurServo(int valeur) {
-    if (valeur < minServoAngle || valeur > maxServoAngle) {
-      throw ArgumentError(
-        'valeur servo : $minServoAngle–$maxServoAngle (angle en degrés)',
-      );
+  static void validateValeurActionneur(Object valeur) {
+    final v = _actuatorValeurString(valeur);
+    if (v != '0' && v != '1') {
+      throw ArgumentError('valeur actionneur : "0" ou "1"');
     }
   }
 
@@ -279,19 +309,7 @@ class AppareilSpec {
       }
       final on = patch['isOn'] == true || patch['isOn'] == 1;
       return {
-        fieldValeur: on ? 1 : 0,
-        fieldLastChanged: FieldValue.serverTimestamp(),
-        if (changedBy != null && changedBy.isNotEmpty)
-          fieldChangedBy: changedBy,
-      };
-    }
-    if (patch.containsKey('angle') || patch.containsKey('servoAngle')) {
-      final raw = patch['angle'] ?? patch['servoAngle'];
-      final i = raw is int ? raw : (raw is num ? raw.toInt() : null);
-      if (i == null) throw ArgumentError('angle servo invalide');
-      validateValeurServo(i);
-      return {
-        fieldValeur: i,
+        fieldValeur: on ? '1' : '0',
         fieldLastChanged: FieldValue.serverTimestamp(),
         if (changedBy != null && changedBy.isNotEmpty)
           fieldChangedBy: changedBy,
@@ -300,17 +318,15 @@ class AppareilSpec {
     if (patch.containsKey(fieldValeur)) {
       final v = patch[fieldValeur];
       if (cat == 'actionneur') {
-        final i = v is int ? v : (v is num ? v.toInt() : null);
-        if (i == null) throw ArgumentError('valeur actionneur invalide');
         return {
-          fieldValeur: i,
+          fieldValeur: _actuatorValeurString(v ?? '0'),
           fieldLastChanged: FieldValue.serverTimestamp(),
           if (changedBy != null && changedBy.isNotEmpty)
             fieldChangedBy: changedBy,
         };
       }
       return {
-        fieldValeur: v is num ? v : 0,
+        fieldValeur: v is num ? v : (v?.toString() ?? '0'),
         fieldTimestamp: FieldValue.serverTimestamp(),
       };
     }
@@ -333,15 +349,21 @@ class AppareilSpec {
 
   static String _labelFromId(String id) {
     final lower = id.toLowerCase();
-    if (lower.startsWith('dht22') || lower == 'dht_salon') return 'Capteur DHT';
-    if (lower.startsWith('dht_temp')) return 'Température';
-    if (lower.startsWith('dht_hum')) return 'Humidité';
-    if (lower.startsWith('pir')) return 'Détecteur mouvement';
-    if (lower.contains('rfid')) return 'Lecteur RFID';
-    if (lower.contains('servo') || lower.contains('porte')) return 'Servo porte';
+    if (lower.startsWith('dht') || lower.contains('temp')) {
+      return 'Capteur Température/Humidité';
+    }
+    if (lower.startsWith('pir')) return 'Détecteur PIR';
+    if (lower.contains('rfid')) return 'Lecteur Badge RFID';
+    if (lower.contains('ultra')) return 'Capteur de Distance';
+    if (lower.contains('servo') || lower.contains('porte')) {
+      return 'Servomoteur Portail';
+    }
+    if (lower.contains('matrice') || lower.contains('max')) {
+      return 'Matrice LED';
+    }
     if (lower.startsWith('lampe')) return 'Lampe';
     if (lower.startsWith('moteur')) return 'Moteur';
-    if (lower.startsWith('buzzer')) return 'Alarme';
+    if (lower.startsWith('relais')) return 'Relais';
     return id;
   }
 
@@ -349,12 +371,14 @@ class AppareilSpec {
     final t = (data[fieldType] as String?)?.trim();
     if (t != null && t.isNotEmpty) return t.toUpperCase();
     final lower = id.toLowerCase();
-    if (lower.startsWith('dht22') || lower == 'dht_salon') return 'DHT22';
-    if (lower.startsWith('dht_temp')) return 'DHT_TEMP';
-    if (lower.startsWith('dht_hum')) return 'DHT_HUM';
+    if (lower.startsWith('dht') || lower.contains('temp')) return 'DHT';
     if (lower.startsWith('pir')) return 'PIR';
     if (lower.contains('rfid')) return 'RFID';
+    if (lower.contains('ultra')) return 'ULTRA';
     if (lower.contains('servo') || lower.contains('porte')) return 'SERVO';
+    if (lower.contains('matrice') || lower.contains('max')) return 'MAX';
+    if (lower.startsWith('lampe')) return 'LAMPE';
+    if (lower.startsWith('moteur')) return 'MOTEUR';
     if (lower.startsWith('led')) return 'LED';
     return 'RELAIS';
   }

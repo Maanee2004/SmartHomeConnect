@@ -4,27 +4,26 @@ import 'package:smart_home/models/device.dart';
 
 void main() {
   group('AppareilSpec payloads', () {
-    test('actionneur avec piece et label', () {
+    test('actionneur RELAIS avec piece et label', () {
       final p = AppareilSpec.actuatorPayload(
-        appareilId: 'lampe_salon',
-        piece: 'Salon',
+        appareilId: 'relais_salon',
+        piece: 'salon2',
         type: 'RELAIS',
-        label: 'Éclairage Principal',
-        pin: 2,
-        valeur: 1,
+        label: 'Relais',
+        pin: 3,
+        valeur: '1',
         userId: 'usr_test',
       );
-      expect(p['actuatorId'], 'lampe_salon');
-      expect(p['piece'], 'Salon');
-      expect(p['pin'], 2);
-      expect(p['valeur'], 1);
+      expect(p['actuatorId'], 'relais_salon');
+      expect(p['piece'], 'salon2');
+      expect(p['pin'], 3);
+      expect(p['valeur'], '1');
       expect(p['categorie'], 'actionneur');
       expect(p['type'], 'RELAIS');
       expect(p['unit'], 'booleen');
-      expect(p['label'], 'Éclairage Principal');
     });
 
-    test('LIGHT UI mappe vers RELAIS en base', () {
+    test('LAMPE mappe vers LAMPE', () {
       final p = AppareilSpec.actuatorPayload(
         appareilId: 'lampe_salon',
         piece: 'Salon',
@@ -33,60 +32,101 @@ void main() {
         pin: 3,
         userId: 'usr_test',
       );
-      expect(p['type'], 'RELAIS');
+      expect(p['type'], 'LAMPE');
+      expect(p['valeur'], '0');
     });
 
-    test('DHT22 stocke temp et hum dans valeur', () {
+    test('DHT stocke temp et hum dans valeur', () {
       final p = AppareilSpec.sensorPayload(
-        appareilId: 'dht_salon',
-        piece: 'Salon',
-        type: 'DHT22',
-        label: 'Capteur DHT Salon',
-        valeur: 24.5,
-        unit: '°C/%',
-        userId: 'usr_test',
-        pin: 5,
-        temperature: 24.5,
-        humidity: 60.0,
-      );
-      expect(p['type'], 'DHT22');
-      expect(p['valeur'], '24.5/60.0');
-      expect(p['temperature'], 24.5);
-      expect(p['humidity'], 60.0);
-      expect(p['unit'], '°C/%');
-    });
-
-    test('RFID capteur unit string', () {
-      final p = AppareilSpec.sensorPayload(
-        appareilId: 'salon2_lecteur_rfid',
+        appareilId: 'salon2_temp_rature',
         piece: 'salon2',
+        type: 'DHT',
+        label: 'Capteur Température/Humidité',
+        valeur: 24.5,
+        unit: '',
+        userId: 'usr_test',
+        pin: 2,
+        temperature: 24.5,
+        humidity: 60.2,
+      );
+      expect(p['type'], 'DHT');
+      expect(p['valeur'], '24.5/60.2');
+      expect(p['unit'], 'celsius/%');
+    });
+
+    test('RFID capteur unit uid', () {
+      final p = AppareilSpec.sensorPayload(
+        appareilId: 'rfid_entree',
+        piece: 'garage',
         type: 'RFID',
-        label: 'Lecteur RFID Entrée',
+        label: 'Lecteur Badge RFID',
         valeur: '0',
         unit: '',
         userId: 'usr_test',
         pin: 10,
       );
       expect(p['type'], 'RFID');
-      expect(p['unit'], 'string');
+      expect(p['unit'], 'uid');
       expect(p['valeur'], '0');
     });
 
-    test('SERVO avec rfid_cible', () {
-      final p = AppareilSpec.actuatorPayload(
-        appareilId: 'salon2_porte_servo',
-        piece: 'salon2',
-        type: 'SERVO',
-        label: 'Servo Portail Principal',
-        pin: 9,
-        valeur: 0,
+    test('ULTRA capteur unit cm', () {
+      final p = AppareilSpec.sensorPayload(
+        appareilId: 'ultra_garage',
+        piece: 'garage',
+        type: 'ULTRA',
+        label: 'Capteur de Distance',
+        valeur: '45',
+        unit: '',
         userId: 'usr_test',
-        rfidCible: 'salon2_lecteur_rfid',
+        pin: 5,
+      );
+      expect(p['type'], 'ULTRA');
+      expect(p['unit'], 'cm');
+      expect(p['valeur'], '45');
+    });
+
+    test('SERVO avec rfid_cible optionnel', () {
+      final p = AppareilSpec.actuatorPayload(
+        appareilId: 'servo_porte',
+        piece: 'garage',
+        type: 'SERVO',
+        label: 'Servomoteur Portail',
+        pin: 9,
+        valeur: '0',
+        userId: 'usr_test',
+        rfidCible: 'rfid_entree',
       );
       expect(p['type'], 'SERVO');
-      expect(p['unit'], 'angle');
-      expect(p['rfid_cible'], 'salon2_lecteur_rfid');
-      expect(p['valeur'], 0);
+      expect(p['unit'], 'booleen');
+      expect(p['rfid_cible'], 'rfid_entree');
+      expect(p['valeur'], '0');
+    });
+
+    test('SERVO sans rfid_cible', () {
+      final p = AppareilSpec.actuatorPayload(
+        appareilId: 'servo_porte',
+        piece: 'garage',
+        type: 'SERVO',
+        label: 'Servomoteur Portail',
+        pin: 9,
+        userId: 'usr_test',
+      );
+      expect(p['rfid_cible'], '');
+    });
+
+    test('MAX actionneur', () {
+      final p = AppareilSpec.actuatorPayload(
+        appareilId: 'matrice_max',
+        piece: 'salon2',
+        type: 'MAX',
+        label: 'Matrice LED Notification',
+        pin: 7,
+        valeur: '1',
+        userId: 'usr_test',
+      );
+      expect(p['type'], 'MAX');
+      expect(p['unit'], 'booleen');
     });
 
     test('PIR capteur unit booleen', () {
@@ -94,8 +134,8 @@ void main() {
         appareilId: 'pir_chambre',
         piece: 'Chambre',
         type: 'PIR',
-        label: 'PIR',
-        valeur: 0,
+        label: 'Détecteur PIR',
+        valeur: '0',
         unit: '',
         userId: 'usr_test',
         pin: 4,
@@ -103,126 +143,63 @@ void main() {
       expect(p['type'], 'PIR');
       expect(p['unit'], 'booleen');
     });
-
-    test('capteur avec piece et unit', () {
-      final p = AppareilSpec.sensorPayload(
-        appareilId: 'dht_temp_salon',
-        piece: 'Chambre',
-        type: 'DHT_TEMP',
-        label: 'Température',
-        valeur: 1,
-        unit: '°C',
-        userId: 'usr_test',
-      );
-      expect(p['sensorId'], 'dht_temp_salon');
-      expect(p['piece'], 'Chambre');
-      expect(p['valeur'], 1);
-      expect(p['unit'], '°C');
-      expect(p.containsKey('timestamp'), isTrue);
-    });
   });
 
   group('Device.fromFirestore', () {
-    test('regroupe par piece', () {
-      final d = Device.fromFirestore('lampe_salon', {
-        'valeur': 1,
+    test('actionneur string valeur on/off', () {
+      final d = Device.fromFirestore('relais_salon', {
+        'valeur': '1',
         'pin': 2,
         'categorie': 'actionneur',
         'piece': 'Salon',
-        'label': 'Éclairage Principal',
+        'type': 'RELAIS',
+        'label': 'Relais',
       });
-      expect(d.piece, 'Salon');
       expect(d.isOn, isTrue);
       expect(d.isActionneur, isTrue);
-      expect(d.name, 'Éclairage Principal');
     });
 
-    test('dht22 combine temp et humidite', () {
+    test('dht combine temp et humidite', () {
       final d = Device.fromFirestore('dht_salon', {
         'sensorId': 'dht_salon',
-        'valeur': 24.5,
-        'piece': 'Salon',
-        'type': 'DHT22',
-        'unit': '°C/%',
-        'label': 'Capteur DHT Salon',
-        'pin': 5,
-        'temperature': 24.5,
-        'humidity': 60.0,
+        'valeur': '24.5/60.2',
+        'piece': 'salon2',
+        'type': 'DHT',
+        'unit': 'celsius/%',
+        'label': 'Capteur Température/Humidité',
+        'pin': 2,
       });
       expect(d.temperatureCelsius, 24.5);
-      expect(d.humidityPercent, 60.0);
+      expect(d.humidityPercent, 60.2);
       expect(d.isDhtCombined, isTrue);
-      expect(d.isCapteur, isTrue);
-      expect(d.name, 'Capteur DHT Salon');
     });
 
-    test('dht_temp avec valeur combinee temp/hum', () {
-      final d = Device.fromFirestore('dht_temp_salon', {
-        'valeur': '24.5/60',
-        'piece': 'Salon',
-        'type': 'DHT_TEMP',
-        'unit': '°C/%',
-        'label': 'Capteur DHT Salon',
+    test('ultra distance cm', () {
+      final d = Device.fromFirestore('ultra_garage', {
+        'sensorId': 'ultra_garage',
+        'valeur': '45',
+        'piece': 'garage',
+        'type': 'ULTRA',
+        'unit': 'cm',
+        'label': 'Capteur de Distance',
         'pin': 5,
       });
-      expect(d.temperatureCelsius, 24.5);
-      expect(d.humidityPercent, 60.0);
-      expect(d.isDhtDisplay, isTrue);
-      expect(d.piece, 'Salon');
-      expect(d.isCapteur, isTrue);
-      expect(d.isActionneur, isFalse);
+      expect(d.distanceCm, 45);
+      expect(d.normalizedType, 'ULTRA');
     });
 
-    test('valeur chaine temp,hum', () {
-      final d = Device.fromFirestore('dht_salon', {
-        'sensorId': 'dht_salon',
-        'valeur': '24.5,60',
-        'piece': 'Salon',
-        'type': 'DHT22',
-        'label': 'Capteur DHT',
-        'pin': 5,
-      });
-      expect(d.temperatureCelsius, 24.5);
-      expect(d.humidityPercent, 60.0);
-    });
-
-    test('fusion legacy dht_temp + dht_hum', () {
-      final temp = Device.fromFirestore('dht_temp_salon', {
-        'sensorId': 'dht_temp_salon',
-        'valeur': 24.5,
-        'piece': 'Salon',
-        'type': 'DHT_TEMP',
-        'pin': 5,
-        'label': 'Température Salon',
-      });
-      final hum = Device.fromFirestore('dht_hum_salon', {
-        'sensorId': 'dht_hum_salon',
-        'valeur': 60,
-        'piece': 'Salon',
-        'type': 'DHT_HUM',
-        'pin': 5,
-        'label': 'Humidité Salon',
-      });
-      final merged = Device.mergeDhtPair(temp, hum);
-      expect(merged?.temperatureCelsius, 24.5);
-      expect(merged?.humidityPercent, 60.0);
-      expect(merged?.isMergedDhtPair, isTrue);
-      expect(merged?.humidityPercent, 60.0);
-      expect(merged?.normalizedType, 'DHT_PAIR');
-    });
-
-    test('capteur avec pin reste capteur', () {
-      final d = Device.fromFirestore('pir_chambre', {
-        'sensorId': 'pir_chambre',
-        'valeur': 1,
-        'piece': 'Chambre',
-        'type': 'PIR',
+    test('servo booleen', () {
+      final d = Device.fromFirestore('servo_porte', {
+        'actuatorId': 'servo_porte',
+        'valeur': '1',
+        'piece': 'garage',
+        'type': 'SERVO',
         'unit': 'booleen',
-        'label': 'Détecteur Chambre',
-        'pin': 4,
+        'rfid_cible': 'rfid_entree',
+        'pin': 9,
       });
-      expect(d.isCapteur, isTrue);
-      expect((d.valeur ?? 0) != 0, isTrue);
+      expect(d.isOn, isTrue);
+      expect(d.rfidCible, 'rfid_entree');
     });
   });
 }

@@ -19,7 +19,7 @@ class AppUser {
   final String phone;
   final String passwordHash;
 
-  /// `admin` ou `user` (défaut). Détermine l’interface au login.
+  /// `admin`, `owner` ou `user` (défaut).
   final String role;
 
   /// Si renseigné, l’utilisateur consulte la maison de ce propriétaire (lecture).
@@ -29,15 +29,23 @@ class AppUser {
 
   bool get isAdmin => UserRole.isAdmin(role);
 
+  bool get isOwner => UserRole.isOwner(role);
+
+  /// Propriétaire (rôle `owner` assigné par l’admin).
+  bool get isHouseOwner =>
+      !isMemberOfAnotherHouse && isOwner;
+
+  bool get isMemberOfAnotherHouse =>
+      houseOwnerUserId != null && houseOwnerUserId!.isNotEmpty;
+
   factory AppUser.fromFirestore(String id, Map<String, dynamic> data) {
     final created = data['createdAt'];
     DateTime? at;
     if (created is Timestamp) at = created.toDate();
     final owner = (data['houseOwnerUserId'] as String?)?.trim();
     return AppUser(
-      userId: (data['userId'] as String?)?.trim().isNotEmpty == true
-          ? (data['userId'] as String).trim()
-          : id,
+      // Toujours l’ID document Firestore (évite les échecs admin si le champ diverge).
+      userId: id,
       name: (data['name'] as String?)?.trim() ?? '',
       email: (data['email'] as String?)?.trim() ?? '',
       phone: (data['phone'] as String?)?.trim() ?? '',

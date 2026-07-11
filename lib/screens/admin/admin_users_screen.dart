@@ -7,6 +7,7 @@ import 'package:smart_home/models/user_role.dart';
 import 'package:smart_home/services/admin_repository.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/screens/admin/admin_user_edit_sheet.dart';
 import 'package:smart_home/widgets/load_error_view.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
 
@@ -20,6 +21,24 @@ class AdminUsersScreen extends StatefulWidget {
 }
 
 class _AdminUsersScreenState extends State<AdminUsersScreen> {
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _matchesSearch(AppUser u, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return u.userId.toLowerCase().contains(q) ||
+        u.name.toLowerCase().contains(q) ||
+        u.email.toLowerCase().contains(q) ||
+        u.phone.toLowerCase().contains(q);
+  }
+
   Future<void> _showCreateUserSheet(List<HouseSummary> houses) async {
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
@@ -123,47 +142,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
-  Future<void> _assignToHouse(AppUser user, List<HouseSummary> houses) async {
-    if (houses.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aucune maison disponible.')),
-      );
-      return;
-    }
-    final ownerId = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(
-          'Rattacher « ${user.name} »',
-          style: TextStyle(color: context.smartColors.textPrimary),
-        ),
-        children: [
-          for (final h in houses)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, h.ownerUserId),
-              child: Text(h.ownerName),
-            ),
-        ],
-      ),
-    );
-    if (ownerId == null || !mounted) return;
-    try {
-      await FirestoreAuthRepository.instance.assignUserToHouse(
-        ownerUserId: ownerId,
-        memberUserId: user.userId,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Utilisateur rattaché à la maison.')),
-      );
-    } on AuthFailure catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-    }
-  }
-
   Widget _field(
     TextEditingController c,
     String hint, {
@@ -226,81 +204,139 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 style: TextStyle(color: context.smartColors.textSecondary),
               ),
             )
-          : StreamBuilder<List<AppUser>>(
-              stream: FirestoreAuthRepository.instance.watchAllUsers(),
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return LoadErrorView(
-                    message: '${snap.error}',
-                    onRetry: () {},
-                  );
-                }
-                if (snap.connectionState == ConnectionState.waiting &&
-                    !snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final users = snap.data ?? const <AppUser>[];
-                return StreamBuilder<List<HouseSummary>>(
-                  stream: AdminRepository.instance.watchHouses(),
-                  builder: (context, houseSnap) {
-                    final houses = houseSnap.data ?? const <HouseSummary>[];
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: users.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final u = users[index];
-                        final isAdmin = UserRole.isAdmin(u.role);
-                        return Material(
-                          color: context.smartColors.card,
-                          borderRadius: BorderRadius.circular(14),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  accentColor.withValues(alpha: 0.15),
-                              child: Icon(
-                                isAdmin
-                                    ? Icons.admin_panel_settings_rounded
-                                    : Icons.person_rounded,
-                                color: accentColor,
-                              ),
-                            ),
-                            title: Text(
-                              u.name.isEmpty ? u.userId : u.name,
-                              style: TextStyle(
-                                color: context.smartColors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${u.email}\n${isAdmin ? 'Administrateur' : 'Utilisateur'}'
-                              '${u.houseOwnerUserId != null ? ' · maison: ${u.houseOwnerUserId}' : ''}',
-                              style: TextStyle(
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                    style: TextStyle(color: context.smartColors.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher (nom, email, téléphone, id)…',
+                      hintStyle:
+                          TextStyle(color: context.smartColors.textSecondary),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: context.smartColors.textSecondary,
+                      ),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: Icon(
+                                Icons.clear_rounded,
                                 color: context.smartColors.textSecondary,
-                                fontSize: 12,
                               ),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() => _searchQuery = '');
+                              },
                             ),
-                            isThreeLine: u.houseOwnerUserId != null,
-                            trailing: isAdmin || u.houseOwnerUserId != null
-                                ? null
-                                : IconButton(
-                                    tooltip: 'Rattacher à une maison',
-                                    icon: Icon(
-                                      Icons.link_rounded,
-                                      color: context.smartColors.textSecondary,
-                                    ),
-                                    onPressed: () => _assignToHouse(u, houses),
-                                  ),
-                          ),
+                      filled: true,
+                      fillColor: context.smartColors.card,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: StreamBuilder<List<AppUser>>(
+                    stream: FirestoreAuthRepository.instance.watchAllUsers(),
+                    builder: (context, snap) {
+                      if (snap.hasError) {
+                        return LoadErrorView(
+                          message: '${snap.error}',
+                          onRetry: () => setState(() {}),
                         );
-                      },
-                    );
-                  },
-                );
-              },
+                      }
+                      if (snap.connectionState == ConnectionState.waiting &&
+                          !snap.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final users = (snap.data ?? const <AppUser>[])
+                          .where((u) => _matchesSearch(u, _searchQuery))
+                          .toList();
+                      return StreamBuilder<List<HouseSummary>>(
+                        stream: AdminRepository.instance.watchHouses(),
+                        builder: (context, houseSnap) {
+                          final houses = houseSnap.data ?? const <HouseSummary>[];
+                          if (users.isEmpty) {
+                            return Center(
+                              child: Text(
+                                _searchQuery.isEmpty
+                                    ? 'Aucun utilisateur.'
+                                    : 'Aucun résultat pour « $_searchQuery ».',
+                                style: TextStyle(
+                                  color: context.smartColors.textSecondary,
+                                ),
+                              ),
+                            );
+                          }
+                          return ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            itemCount: users.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final u = users[index];
+                              final isAdmin = UserRole.isAdmin(u.role);
+                              final isOwner = UserRole.isOwner(u.role);
+                              return Material(
+                                color: context.smartColors.card,
+                                borderRadius: BorderRadius.circular(14),
+                                child: ListTile(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  leading: CircleAvatar(
+                                    backgroundColor:
+                                        accentColor.withValues(alpha: 0.15),
+                                    child: Icon(
+                                      isAdmin
+                                          ? Icons.admin_panel_settings_rounded
+                                          : isOwner
+                                              ? Icons.home_work_rounded
+                                              : Icons.person_rounded,
+                                      color: accentColor,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    u.name.isEmpty ? u.userId : u.name,
+                                    style: TextStyle(
+                                      color: context.smartColors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${u.email}\n${UserRole.label(u.role)}'
+                                    '${u.houseOwnerUserId != null ? ' · maison: ${u.houseOwnerUserId}' : ''}',
+                                    style: TextStyle(
+                                      color: context.smartColors.textSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  isThreeLine: u.houseOwnerUserId != null,
+                                  trailing: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: context.smartColors.textSecondary,
+                                  ),
+                                  onTap: () => showAdminUserEditSheet(
+                                    context,
+                                    user: u,
+                                    houses: houses,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }

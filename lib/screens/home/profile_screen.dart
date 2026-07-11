@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 import 'package:smart_home/models/user_app_preferences.dart';
+import 'package:smart_home/screens/home/join_house_screen.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/house_invites_repository.dart';
 import 'package:smart_home/services/user_preferences_service.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
 
@@ -69,15 +72,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
               final email = AuthService.instance.currentUserEmail ?? '—';
               final userId = AuthService.instance.currentUserId ?? '—';
 
+              final r = context.responsive;
+
               return ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: EdgeInsets.fromLTRB(
+                  r.horizontalPadding,
+                  r.verticalPadding,
+                  r.horizontalPadding,
+                  r.verticalPadding + 16,
+                ),
                 children: [
                   Center(
                     child: CircleAvatar(
-                      radius: 40,
+                      radius: r.scale(40),
                       backgroundColor: accentColor.withValues(alpha: 0.2),
                       child: Icon(Icons.person_rounded,
-                          size: 44, color: accentColor),
+                          size: r.iconSize(44), color: accentColor),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -97,6 +107,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextStyle(color: context.smartColors.textSecondary, fontSize: 13),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        AuthService.instance.roleLabel,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (AuthService.instance.isMember) ...[
+                    const SizedBox(height: 6),
+                    Center(
+                      child: Text(
+                        'Maison de ${AuthService.instance.houseOwnerUserId}',
+                        style: TextStyle(
+                          color: context.smartColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
                   if (userPrefs.showDateTime) ...[
                     const SizedBox(height: 10),
                     Center(
@@ -329,6 +373,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ],
                   ),
+                  if (AuthService.instance.canJoinHouse) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const JoinHouseScreen(),
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.home_work_outlined, color: accentColor),
+                      label: Text(
+                        'Rejoindre une maison',
+                        style: TextStyle(color: accentColor),
+                      ),
+                    ),
+                  ],
+                  if (AuthService.instance.isMember) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final userId = AuthService.instance.currentUserId;
+                        if (userId == null) return;
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Quitter la maison ?'),
+                            content: const Text(
+                              'Vous n’aurez plus accès aux appareils de cette maison.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Annuler'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Quitter'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (ok != true || !context.mounted) return;
+                        try {
+                          final user =
+                              await HouseInvitesRepository.instance.leaveHouse(
+                            userId,
+                          );
+                          await AuthService.instance.saveSession(user);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Vous avez quitté la maison.'),
+                            ),
+                          );
+                          setState(() {});
+                        } on InviteFailure catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.message)),
+                          );
+                        }
+                      },
+                      icon: Icon(Icons.exit_to_app_rounded, color: warningColor),
+                      label: Text(
+                        'Quitter la maison',
+                        style: TextStyle(color: warningColor),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 28),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(

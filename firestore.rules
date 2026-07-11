@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function houseChildUserIdOk(userId) {
+      return !('userId' in request.resource.data)
+        || request.resource.data.userId == userId;
+    }
+
     match /users/{userId} {
       allow read, write: if true;
       match /rfidCards/{cardId} {
@@ -12,15 +17,50 @@ service cloud.firestore {
       }
     }
 
-    match /appareils/{appareilId} {
-      allow read, write: if true;
+    // maison_<userId> → maisons/{userId}/appareils|pieces|alerts|isonline
+    match /maisons/{userId} {
+      allow read: if true;
+      allow create, update: if houseChildUserIdOk(userId);
+      allow delete: if true;
+
+      match /appareils/{appareilId} {
+        allow read: if true;
+        allow create, update: if houseChildUserIdOk(userId);
+        allow delete: if true;
+      }
+
+      match /pieces/{pieceId} {
+        allow read: if true;
+        allow create, update: if houseChildUserIdOk(userId);
+        allow delete: if true;
+      }
+
+      match /alerts/{alertId} {
+        allow read: if true;
+        allow create, update: if houseChildUserIdOk(userId);
+        allow delete: if true;
+      }
+
+      match /isonline/{docId} {
+        allow read: if true;
+        allow create, update: if request.resource.data.keys().hasOnly(['isonline', 'updatedAt'])
+          && request.resource.data.isonline is bool;
+        allow delete: if false;
+      }
+
+      match /invites/{inviteId} {
+        allow read: if true;
+        allow create, update: if houseChildUserIdOk(userId);
+        allow delete: if true;
+      }
+    }
+
+    match /inviteCodes/{code} {
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     match /accessLogs/{logId} {
-      allow read, write: if true;
-    }
-
-    match /alerts/{alertId} {
       allow read, write: if true;
     }
   }

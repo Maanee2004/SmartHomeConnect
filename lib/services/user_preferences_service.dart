@@ -61,9 +61,14 @@ class UserPreferencesService {
       final snap = await ref.get();
       if (!snap.exists) return;
       final remote = UserAppPreferences.fromFirestore(snap.data());
-      notifier.value = remote;
-      _themeBridge?.value = remote.themeMode;
-      await _saveToLocal(remote);
+      // Le thème choisi sur l’appareil prime sur Firestore (souvent « dark » par défaut).
+      final sp = await SharedPreferences.getInstance();
+      final localTheme =
+          UserAppPreferences.themeModeFromString(sp.getString(_kTheme));
+      final merged = remote.copyWith(themeMode: localTheme);
+      notifier.value = merged;
+      _themeBridge?.value = merged.themeMode;
+      await _saveToLocal(merged);
     } catch (e) {
       // ignore: avoid_print
       print('[Preferences] load Firestore: $e');

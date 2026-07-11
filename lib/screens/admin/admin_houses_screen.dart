@@ -77,7 +77,7 @@ class AdminHousesScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Une maison apparaît quand un utilisateur a des pièces ou des appareils.',
+                            'Chaque utilisateur possède une maison (même vide).',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: context.smartColors.textSecondary,

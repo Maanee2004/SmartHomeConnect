@@ -54,6 +54,7 @@ class Device {
 
   bool get isDhtCombined =>
       isMergedDhtPair ||
+      normalizedType == 'DHT' ||
       normalizedType == 'DHT22' ||
       normalizedType == 'DHT_TEMP';
 
@@ -63,36 +64,46 @@ class Device {
   String get normalizedType {
     if (isMergedDhtPair) return 'DHT_PAIR';
     final u = type.toUpperCase().trim();
-    if (u == 'DHT22') return 'DHT22';
-    if (u == 'DHT_TEMP' || u == 'SENSOR_TEMP') return 'DHT_TEMP';
-    if (u == 'DHT_HUM') return 'DHT_HUM';
+    if (AppareilSpec.isDhtType(u)) {
+      return u == 'DHT_HUM' ? 'DHT_HUM' : 'DHT';
+    }
     if (u == 'PIR') return 'PIR';
     if (u == 'RFID') return 'RFID';
+    if (u == 'ULTRA') return 'ULTRA';
     if (u == 'SERVO') return 'SERVO';
+    if (u == 'MAX') return 'MAX';
+    if (u == 'LAMPE' || u == 'LIGHT') return 'LAMPE';
+    if (u == 'MOTEUR' || u == 'MOTOR') return 'MOTEUR';
     if (u == 'LED') return 'LED';
-    if (u == 'RELAIS' ||
-        u == 'LIGHT' ||
-        u == 'LAMPE' ||
-        u == 'FAN' ||
-        u == 'OUTLET' ||
-        u == 'CAMERA') {
+    if (u == 'RELAIS' || u == 'FAN' || u == 'OUTLET' || u == 'CAMERA') {
       return 'RELAIS';
     }
     return u.isEmpty ? 'RELAIS' : u;
   }
 
-  bool get isOn {
-    if (isCanonical && isActionneur) return valeur == 1;
-    final v = state['isOn'] ?? valeur;
-    if (v is bool) return v;
-    if (v is num) return v != 0;
+  static bool _truthy(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final t = raw.trim().toLowerCase();
+      return t == '1' || t == 'true' || t == 'on';
+    }
     return false;
+  }
+
+  bool get isOn {
+    if (isCanonical && isActionneur) {
+      return _truthy(state['valeur'] ?? valeur);
+    }
+    final v = state['isOn'] ?? state['valeur'] ?? valeur;
+    return _truthy(v);
   }
 
   double? get temperatureCelsius {
     if (temperature != null) return temperature;
     if (normalizedType == 'DHT_HUM') return null;
-    if (normalizedType == 'DHT_TEMP' ||
+    if (normalizedType == 'DHT' ||
+        normalizedType == 'DHT_TEMP' ||
         normalizedType == 'DHT22' ||
         isDhtCombined) {
       for (final raw in [valeur, state['valeur']]) {
@@ -124,11 +135,12 @@ class Device {
     return parsed?.clamp(0, 100);
   }
 
-  int get servoAngle {
-    if (normalizedType != 'SERVO') return 0;
-    final v = valeur ?? state['valeur'];
-    if (v is num) return v.toInt().clamp(0, 180);
-    return 0;
+  double? get distanceCm {
+    if (normalizedType != 'ULTRA') return null;
+    final raw = state['valeur'] ?? valeur;
+    if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw.trim().replaceAll(',', '.'));
+    return null;
   }
 
   String? get rfidBadgeUid {
@@ -149,15 +161,44 @@ class Device {
     if (isCanonical && isCapteur) return false;
     if (isMergedDhtPair ||
         normalizedType == 'DHT_PAIR' ||
+        normalizedType == 'DHT' ||
         normalizedType == 'DHT22' ||
         normalizedType == 'DHT_TEMP' ||
         normalizedType == 'DHT_HUM' ||
         normalizedType == 'PIR' ||
         normalizedType == 'RFID' ||
-        normalizedType == 'SERVO') {
+        normalizedType == 'ULTRA') {
       return false;
     }
     return isOn;
+  }
+
+  /// État actionneur pour affichage optimiste (avant retour Firestore).
+  Device withActuatorOn(bool on) {
+    final valStr = on ? '1' : '0';
+    return Device(
+      id: id,
+      name: name,
+      roomId: roomId,
+      type: type,
+      state: {
+        ...state,
+        'valeur': valStr,
+        'isOn': on,
+      },
+      isOnline: isOnline,
+      categorie: categorie,
+      pin: pin,
+      valeur: on ? 1 : 0,
+      piece: piece,
+      unit: unit,
+      temperature: temperature,
+      humidity: humidity,
+      isCanonical: isCanonical,
+      isMergedDhtPair: isMergedDhtPair,
+      humDocId: humDocId,
+      rfidCible: rfidCible,
+    );
   }
 
   static Map<String, dynamic> _legacyState(Map<String, dynamic> data) {
@@ -288,7 +329,13 @@ class Device {
         valeur = val;
       } else if (val is String) {
         final pair = _dhtFromValeur(val);
-        valeur = pair.$1 ?? num.tryParse(val.trim().replaceAll(',', '.'));
+        valeur = pair.$1 ??
+            num.tryParse(val.trim().replaceAll(',', '.')) ??
+            (val.trim() == '1'
+                ? 1
+                : val.trim() == '0'
+                    ? 0
+                    : null);
       }
       int? pin;
       final pinRaw = data[AppareilSpec.fieldPin];

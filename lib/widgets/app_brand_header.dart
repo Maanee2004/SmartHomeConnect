@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/theme/app_branding.dart';
+import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
 /// En-tête centré : logo Wi‑Fi + « SMART HOME CONNECT ».
@@ -22,45 +23,67 @@ class AppBrandHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
-    final asset = logoAsset ?? AppBranding.selectedLogoAsset;
-    final logoSize = compact ? 36.0 : 52.0;
-    final titleSize = compact ? 13.0 : 17.0;
+    final brightness = Theme.of(context).brightness;
+    final asset = AppBranding.resolveLogoAsset(
+      brightness,
+      override: logoAsset,
+    );
+    final r = ResponsiveLayout.of(context);
+    final logoSize = r.scale(compact ? 36.0 : 52.0);
+    final titleSize = r.fontSize(compact ? 13.0 : 17.0);
+    final useAssetLogo = asset != null;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        compact ? 6 : 12,
-        16,
-        compact ? 6 : 14,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (asset != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(compact ? 10 : 14),
-              child: Image.asset(
+    return Material(
+      color: c.scaffoldBackground,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          r.horizontalPadding,
+          compact ? r.scale(6) : r.scale(12),
+          r.horizontalPadding,
+          compact ? r.scale(6) : r.scale(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (useAssetLogo)
+              Image.asset(
                 asset,
                 width: logoSize,
                 height: logoSize,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _LogoMark(size: logoSize, colors: c),
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, __, ___) {
+                  if (brightness == Brightness.dark &&
+                      asset == AppBranding.logoOptionBTransparent) {
+                    return Image.asset(
+                      AppBranding.logoOptionB,
+                      width: logoSize,
+                      height: logoSize,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      errorBuilder: (_, __, ___) =>
+                          _LogoMark(size: logoSize, colors: c),
+                    );
+                  }
+                  return _LogoMark(size: logoSize, colors: c);
+                },
+              )
+            else
+              _LogoMark(size: logoSize, colors: c),
+            SizedBox(height: compact ? 6 : 10),
+            Text(
+              AppBranding.appName,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: titleSize,
+                fontWeight: FontWeight.w800,
+                letterSpacing: compact ? 0.8 : 1.2,
+                height: 1.1,
+                decoration: TextDecoration.none,
+                decorationThickness: 0,
               ),
-            )
-          else
-            _LogoMark(size: logoSize, colors: c),
-          SizedBox(height: compact ? 6 : 10),
-          Text(
-            AppBranding.appName,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: titleSize,
-              fontWeight: FontWeight.w800,
-              letterSpacing: compact ? 0.8 : 1.2,
-              height: 1.1,
             ),
-          ),
           if (showTagline && !compact) ...[
             const SizedBox(height: 4),
             Text(
@@ -74,6 +97,7 @@ class AppBrandHeader extends StatelessWidget {
             ),
           ],
         ],
+        ),
       ),
     );
   }

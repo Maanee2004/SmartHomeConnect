@@ -1,17 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smart_home/models/app_user.dart';
 import 'package:smart_home/models/house_summary.dart';
+import 'package:smart_home/models/user_role.dart';
+import 'package:smart_home/services/firestore_house_paths.dart';
 import 'package:smart_home/services/firestore_schema.dart';
+
 /// Opérations réservées aux administrateurs (liste users / maisons).
 class AdminRepository {
   AdminRepository._();
   static final AdminRepository instance = AdminRepository._();
 
-  CollectionReference<Map<String, dynamic>> get _users =>
-      FirebaseFirestore.instance.collection(FirestoreSchema.usersCollection);
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
 
-  CollectionReference<Map<String, dynamic>> get _devices =>
-      FirebaseFirestore.instance.collection(FirestoreSchema.appareilsCollection);
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _db.collection(FirestoreSchema.usersCollection);
 
   DocumentReference<Map<String, dynamic>> _preferencesRef(String userId) =>
       _users
@@ -19,24 +21,14 @@ class AdminRepository {
           .collection(FirestoreSchema.preferencesSubcollection)
           .doc(FirestoreSchema.preferencesDocId);
 
-  int _countRooms(Map<String, dynamic>? prefs) {
-    if (prefs == null) return 0;
-    final raw = prefs[FirestoreSchema.fieldPieces];
-    if (raw is! List) return 0;
-    var n = 0;
-    for (final item in raw) {
-      if (item is Map) {
-        final id = (item['id'] as String?)?.trim();
-        final name = (item['name'] as String?)?.trim() ??
-            (item['nom'] as String?)?.trim();
-        if (id != null && id.isNotEmpty && name != null && name.isNotEmpty) {
-          n++;
-        }
-      } else if (item is String && item.trim().isNotEmpty) {
-        n++;
-      }
-    }
-    return n;
+  Future<int> _countRoomsForUser(String userId) async {
+    final snap = await FirestoreHousePaths.pieces(_db, userId).get();
+    return snap.docs.length;
+  }
+
+  Future<int> _countDevicesForUser(String userId) async {
+    final snap = await FirestoreHousePaths.appareils(_db, userId).get();
+    return snap.docs.length;
   }
 
   List<String> _memberIds(Map<String, dynamic>? prefs) {
@@ -49,29 +41,23 @@ class AdminRepository {
     ];
   }
 
-  /// Maison = au moins une pièce **ou** un appareil pour ce `userId`.
+  /// Une maison par propriétaire (`role: owner` ou `user` legacy, pas membre).
   Future<List<HouseSummary>> fetchHouses() async {
-    final users = await FirebaseFirestore.instance
-        .collection(FirestoreSchema.usersCollection)
-        .orderBy('name')
-        .get();
-    final devicesSnap = await _devices.get();
-    final deviceCountByUser = <String, int>{};
-    for (final doc in devicesSnap.docs) {
-      final uid =
-          (doc.data()[FirestoreSchema.fieldUserId] as String?)?.trim();
-      if (uid == null || uid.isEmpty) continue;
-      deviceCountByUser[uid] = (deviceCountByUser[uid] ?? 0) + 1;
-    }
+    final users = await _users.orderBy('name').get();
 
     final houses = <HouseSummary>[];
     for (final userDoc in users.docs) {
       final user = AppUser.fromFirestore(userDoc.id, userDoc.data());
+      if (UserRole.isAdmin(user.role)) continue;
+      if (!UserRole.isOwner(user.role)) continue;
+      if (user.isMemberOfAnotherHouse) continue;
+
+      await FirestoreHousePaths.ensureInitialized(_db, user.userId);
+
       final prefsSnap = await _preferencesRef(user.userId).get();
       final prefs = prefsSnap.data();
-      final roomCount = _countRooms(prefs);
-      final deviceCount = deviceCountByUser[user.userId] ?? 0;
-      if (roomCount == 0 && deviceCount == 0) continue;
+      final roomCount = await _countRoomsForUser(user.userId);
+      final deviceCount = await _countDevicesForUser(user.userId);
       houses.add(
         HouseSummary(
           ownerUserId: user.userId,
