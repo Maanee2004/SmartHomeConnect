@@ -25,6 +25,37 @@ class AppareilSpec {
   static const minPin = 2;
   static const maxPin = 53;
 
+  /// UART / SPI / boot ESP32 — non assignables via l’app.
+  static const reservedPins = <int>{2, 3, 9, 11, 12, 13};
+
+  /// Rôles matériels (affichage admin / guide technique).
+  static const reservedPinRoles = <int, String>{
+    2: 'TX',
+    3: 'RX',
+    9: 'RST / flash',
+    11: 'MOSI',
+    12: 'MISO',
+    13: 'SCK',
+  };
+
+  static bool isPinSelectable(int pin) =>
+      pin >= minPin && pin <= maxPin && !reservedPins.contains(pin);
+
+  static String get reservedPinsListText {
+    final sorted = reservedPins.toList()..sort();
+    return sorted.join(', ');
+  }
+
+  /// Libellé court pour une broche réservée.
+  static String reservedPinLabel(int pin, {bool technical = false}) {
+    if (!reservedPins.contains(pin)) return '';
+    if (technical) {
+      final role = reservedPinRoles[pin];
+      if (role != null) return role;
+    }
+    return 'ESP32';
+  }
+
   static const unitBooleen = 'booleen';
   static const unitUid = 'uid';
   static const unitCm = 'cm';
@@ -61,8 +92,6 @@ class AppareilSpec {
   static const uiActuatorTypes = <String, String>{
     'RELAIS': 'Relais ON/OFF',
     'LAMPE': 'Lampe',
-    'MOTEUR': 'Moteur DC',
-    'LED': 'LED directe',
     'SERVO': 'Servomoteur porte (SERVO)',
     'MAX': 'Matrice LED (MAX7219)',
   };
@@ -152,7 +181,7 @@ class AppareilSpec {
       default:
         throw ArgumentError(
           'Type actionneur non supporté: « $raw ». '
-          'Utilisez RELAIS, LAMPE, MOTEUR, LED, SERVO ou MAX.',
+          'Utilisez RELAIS, LAMPE, SERVO ou MAX.',
         );
     }
   }
@@ -260,8 +289,7 @@ class AppareilSpec {
       fieldPiece: piece.trim(),
       fieldUserId: userId,
       fieldLastChanged: FieldValue.serverTimestamp(),
-      if (changedBy != null && changedBy.isNotEmpty)
-        fieldChangedBy: changedBy,
+      if (changedBy != null && changedBy.isNotEmpty) fieldChangedBy: changedBy,
       if (canonical == 'SERVO') fieldRfidCible: (rfidCible ?? '').trim(),
     };
   }
@@ -287,6 +315,20 @@ class AppareilSpec {
   static void validatePin(int pin) {
     if (pin < minPin || pin > maxPin) {
       throw ArgumentError('pin hors plage ($minPin–$maxPin) : $pin');
+    }
+    if (reservedPins.contains(pin)) {
+      throw ArgumentError(
+        'Broche $pin réservée (module ESP32 : UART/SPI, TX, RX, MOSI, RST…). '
+        'Broches utilisables : voir la liste « Broches libres ».',
+      );
+    }
+  }
+
+  /// ULTRA (HC-SR04) : Trigger = [pin], Echo = pin + 1.
+  static void validatePinForDeviceType(int pin, String deviceType) {
+    validatePin(pin);
+    if (deviceType.trim().toUpperCase() == 'ULTRA') {
+      validatePin(pin + 1);
     }
   }
 

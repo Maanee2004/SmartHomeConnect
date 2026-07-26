@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/models/device.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
@@ -50,8 +51,7 @@ class _DeviceCardState extends State<DeviceCard> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final r = context.responsive;
-        final tight =
-            constraints.maxWidth < 210 || constraints.maxHeight < 300;
+        final tight = constraints.maxWidth < 210 || constraints.maxHeight < 300;
         return _buildCard(context, r, tight: tight);
       },
     );
@@ -73,9 +73,12 @@ class _DeviceCardState extends State<DeviceCard> {
     final titleSize = tight ? r.fontSize(14) : r.fontSize(16);
     final metaSize = tight ? r.fontSize(10) : r.fontSize(11);
 
+    final brightness = Theme.of(context).brightness;
+
     return Opacity(
       opacity: online ? 1 : 0.55,
       child: AnimatedContainer(
+        key: ValueKey(brightness),
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
         margin: EdgeInsets.symmetric(vertical: tight ? 2 : r.scale(4)),
@@ -115,7 +118,7 @@ class _DeviceCardState extends State<DeviceCard> {
                     Icons.cloud_off_outlined,
                     color: errorColor,
                     size: tight ? r.iconSize(16) : r.iconSize(18),
-                    semanticLabel: 'Hors ligne',
+                    semanticLabel: context.l10n.offline,
                   ),
                 ],
                 SizedBox(width: tight ? 8 : 10),
@@ -135,7 +138,7 @@ class _DeviceCardState extends State<DeviceCard> {
                       ),
                       SizedBox(height: tight ? 1 : 2),
                       Text(
-                        _metaLine(d),
+                        _metaLine(context, d),
                         style: TextStyle(
                           color: c.textSecondary,
                           fontSize: metaSize,
@@ -148,7 +151,7 @@ class _DeviceCardState extends State<DeviceCard> {
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
-                            'Hors ligne',
+                            context.l10n.offline,
                             style: TextStyle(
                               color: errorColor,
                               fontSize: r.fontSize(11),
@@ -191,7 +194,8 @@ class _DeviceCardState extends State<DeviceCard> {
     );
   }
 
-  static String _metaLine(Device d) {
+  static String _metaLine(BuildContext context, Device d) {
+    final l = context.l10n;
     final parts = <String>[];
     if (d.isMergedDhtPair) {
       parts.addAll(['DHT_TEMP', 'DHT_HUM']);
@@ -200,7 +204,7 @@ class _DeviceCardState extends State<DeviceCard> {
     }
     final piece = d.piece?.trim();
     if (piece != null && piece.isNotEmpty) parts.add(piece);
-    parts.add(d.isCapteur ? 'capteur' : 'actionneur');
+    parts.add(d.isCapteur ? l.sensorMeta : l.actuatorMeta);
     return parts.join(' · ');
   }
 
@@ -220,12 +224,13 @@ class _DeviceCardState extends State<DeviceCard> {
     }
 
     if (d.normalizedType == 'SERVO') {
-      return _buildServoPanel(d, c, tight: tight);
+      return _buildServoPanel(context, d, c, tight: tight);
     }
 
+    final l = context.l10n;
     final stateLabel = d.normalizedType == 'MAX'
-        ? (_actuatorOn(d) ? 'Actif' : 'Éteint')
-        : (_actuatorOn(d) ? 'Allumé' : 'Éteint');
+        ? (_actuatorOn(d) ? l.stateActive : l.stateOff)
+        : (_actuatorOn(d) ? l.stateOn : l.stateOff);
 
     return _LabeledSwitchRow(
       label: stateLabel,
@@ -246,14 +251,15 @@ class _DeviceCardState extends State<DeviceCard> {
     final t = d.normalizedType;
 
     if (d.isDhtDisplay) {
-      return _buildDhtPanel(d, c, tight: tight);
+      return _buildDhtPanel(context, d, c, tight: tight);
     }
+    final l = context.l10n;
     if (t == 'PIR') {
       final motion = (d.valeur ?? 0) != 0;
       return _buildMetricPanel(
         c: c,
-        label: 'Mouvement',
-        value: motion ? 'Détecté' : 'Aucun',
+        label: l.motion,
+        value: motion ? l.motionDetected : l.motionNone,
         icon: Icons.sensors_rounded,
         highlight: motion,
         compact: tight,
@@ -263,8 +269,8 @@ class _DeviceCardState extends State<DeviceCard> {
       final badge = d.rfidBadgeUid;
       return _buildMetricPanel(
         c: c,
-        label: 'UID badge',
-        value: badge ?? 'En attente',
+        label: l.badgeUid,
+        value: badge ?? l.waiting,
         icon: Icons.nfc_rounded,
         highlight: badge != null,
         compact: tight,
@@ -274,7 +280,7 @@ class _DeviceCardState extends State<DeviceCard> {
       final dist = d.distanceCm;
       return _buildMetricPanel(
         c: c,
-        label: 'Distance',
+        label: l.distance,
         value: dist != null ? '${dist.toStringAsFixed(0)} cm' : '— cm',
         icon: Icons.straighten_rounded,
         highlight: dist != null && dist < 30,
@@ -285,7 +291,7 @@ class _DeviceCardState extends State<DeviceCard> {
       final temp = d.temperatureCelsius;
       return _buildMetricPanel(
         c: c,
-        label: 'Température',
+        label: l.temperature,
         value: temp != null ? '${temp.toStringAsFixed(1)} °C' : '— °C',
         icon: Icons.device_thermostat_outlined,
         compact: tight,
@@ -295,7 +301,7 @@ class _DeviceCardState extends State<DeviceCard> {
       final hum = d.humidityPercent;
       return _buildMetricPanel(
         c: c,
-        label: 'Humidité',
+        label: l.humidity,
         value: hum != null ? '${hum.round()} %' : '— %',
         icon: Icons.water_drop_outlined,
         compact: tight,
@@ -304,19 +310,24 @@ class _DeviceCardState extends State<DeviceCard> {
 
     final raw = d.valeur;
     final u = d.unit?.trim();
-    final text = raw is num
-        ? (u != null && u.isNotEmpty ? '$raw $u' : '$raw')
-        : '—';
+    final text =
+        raw is num ? (u != null && u.isNotEmpty ? '$raw $u' : '$raw') : '—';
     return _buildMetricPanel(
       c: c,
-      label: 'Mesure',
+      label: l.measurement,
       value: text,
       icon: Icons.sensors_outlined,
       compact: tight,
     );
   }
 
-  Widget _buildServoPanel(Device d, SmartHomeColors c, {required bool tight}) {
+  Widget _buildServoPanel(
+    BuildContext context,
+    Device d,
+    SmartHomeColors c, {
+    required bool tight,
+  }) {
+    final l = context.l10n;
     final r = context.responsive;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -326,14 +337,15 @@ class _DeviceCardState extends State<DeviceCard> {
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
-              'RFID : ${d.rfidCible}',
-              style: TextStyle(color: c.textSecondary, fontSize: r.fontSize(10)),
+              l.rfidTarget(d.rfidCible!),
+              style:
+                  TextStyle(color: c.textSecondary, fontSize: r.fontSize(10)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
         _LabeledSwitchRow(
-          label: _actuatorOn(d) ? 'Ouverte' : 'Fermée',
+          label: _actuatorOn(d) ? l.doorOpen : l.doorClosed,
           value: _actuatorOn(d),
           labelSize: tight ? r.fontSize(12) : r.fontSize(14),
           textColor: c.textPrimary,
@@ -345,7 +357,13 @@ class _DeviceCardState extends State<DeviceCard> {
     );
   }
 
-  Widget _buildDhtPanel(Device d, SmartHomeColors c, {required bool tight}) {
+  Widget _buildDhtPanel(
+    BuildContext context,
+    Device d,
+    SmartHomeColors c, {
+    required bool tight,
+  }) {
+    final l = context.l10n;
     final temp = d.temperatureCelsius;
     final hum = d.humidityPercent;
     final waiting = temp == null && hum == null;
@@ -362,8 +380,9 @@ class _DeviceCardState extends State<DeviceCard> {
       ),
       child: waiting
           ? Text(
-              'En attente DHT…',
-              style: TextStyle(color: c.textSecondary, fontSize: r.fontSize(12)),
+              l.waitingDht,
+              style:
+                  TextStyle(color: c.textSecondary, fontSize: r.fontSize(12)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             )
@@ -374,9 +393,8 @@ class _DeviceCardState extends State<DeviceCard> {
                     c: c,
                     icon: Icons.device_thermostat_outlined,
                     label: 'Temp.',
-                    value: temp != null
-                        ? '${temp.toStringAsFixed(1)} °C'
-                        : '— °C',
+                    value:
+                        temp != null ? '${temp.toStringAsFixed(1)} °C' : '— °C',
                     compact: tight,
                   ),
                 ),
@@ -560,11 +578,17 @@ class _ActionButtons extends StatelessWidget {
           if (v == 'move') onMoveRoom?.call();
           if (v == 'delete') onDelete?.call();
         },
-        itemBuilder: (_) => [
+        itemBuilder: (ctx) => [
           if (onMoveRoom != null)
-            const PopupMenuItem(value: 'move', child: Text('Changer pièce')),
+            PopupMenuItem(
+              value: 'move',
+              child: Text(ctx.l10n.changeRoom),
+            ),
           if (onDelete != null)
-            const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+            PopupMenuItem(
+              value: 'delete',
+              child: Text(ctx.l10n.delete),
+            ),
         ],
       );
     }
@@ -574,7 +598,7 @@ class _ActionButtons extends StatelessWidget {
       children: [
         if (onMoveRoom != null)
           IconButton(
-            tooltip: 'Changer de pièce',
+            tooltip: context.l10n.changeRoomTooltip,
             icon: Icon(Icons.move_up_rounded, color: textSecondary, size: size),
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
@@ -583,7 +607,7 @@ class _ActionButtons extends StatelessWidget {
           ),
         if (onDelete != null)
           IconButton(
-            tooltip: 'Supprimer l’appareil',
+            tooltip: context.l10n.deleteDeviceTooltip,
             icon: Icon(Icons.delete_outline_rounded,
                 color: errorColor.withValues(alpha: 0.9), size: size),
             visualDensity: VisualDensity.compact,
@@ -657,8 +681,7 @@ class _PinBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.smartColors;
     final missing = pin == null && required;
-    final label =
-        pin != null ? 'Broche $pin' : (required ? 'Broche req.' : 'Broche —');
+    final label = context.l10n.pinBadge(pin, required: required);
     final color = missing ? warningColor : c.textSecondary;
 
     final chip = Row(

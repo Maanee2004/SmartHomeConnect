@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
@@ -14,21 +15,20 @@ class DashboardBottomBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
 
-  static const labels = ['Accueil', 'Pièces', 'Profil', 'Paramètres'];
-
-  static const _items = <_NavItem>[
-    _NavItem(icon: Icons.home_rounded, label: 'Accueil'),
-    _NavItem(icon: Icons.meeting_room_rounded, label: 'Pièces'),
-    _NavItem(icon: Icons.person_rounded, label: 'Profil'),
-    _NavItem(icon: Icons.settings_rounded, label: 'Paramètres'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
     final r = context.responsive;
+    final l10n = context.l10n;
     final iconSize = r.iconSize(26);
     final labelSize = r.fontSize(11);
+
+    final items = [
+      _NavItem(icon: Icons.home_rounded, label: l10n.navHome),
+      _NavItem(icon: Icons.meeting_room_rounded, label: l10n.navRooms),
+      _NavItem(icon: Icons.person_rounded, label: l10n.navProfile),
+      _NavItem(icon: Icons.settings_rounded, label: l10n.navSettings),
+    ];
 
     return Material(
       color: c.scaffoldBackground,
@@ -46,10 +46,10 @@ class DashboardBottomBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Row(
               children: [
-                for (var i = 0; i < _items.length; i++)
+                for (var i = 0; i < items.length; i++)
                   Expanded(
                     child: _BottomNavItem(
-                      item: _items[i],
+                      item: items[i],
                       selected: selectedIndex == i,
                       iconSize: iconSize,
                       labelSize: labelSize,

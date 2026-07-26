@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/models/user_app_preferences.dart';
 import 'package:smart_home/screens/home/join_house_screen.dart';
 import 'package:smart_home/services/auth_service.dart';
@@ -54,7 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          'Profil',
+          context.l10n.navProfile,
           style: TextStyle(color: context.smartColors.textPrimary, fontWeight: FontWeight.w600),
         ),
         actions: const [ThemeToggleButton()],
@@ -66,9 +67,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return StreamBuilder<String?>(
             stream: AuthService.instance.userNameStream(),
             builder: (context, snap) {
+              final l10n = context.l10n;
               final name = snap.data?.trim();
               final display =
-                  (name == null || name.isEmpty) ? 'Utilisateur' : name;
+                  (name == null || name.isEmpty) ? l10n.userDefault : name;
               final email = AuthService.instance.currentUserEmail ?? '—';
               final userId = AuthService.instance.currentUserId ?? '—';
 
@@ -119,7 +121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        AuthService.instance.roleLabel,
+                        l10n.roleLabel(AuthService.instance.currentRole),
                         style: TextStyle(
                           color: accentColor,
                           fontWeight: FontWeight.w600,
@@ -132,7 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 6),
                     Center(
                       child: Text(
-                        'Maison de ${AuthService.instance.houseOwnerUserId}',
+                        '${l10n.memberHousePrefix} ${AuthService.instance.houseOwnerUserId}',
                         style: TextStyle(
                           color: context.smartColors.textSecondary,
                           fontSize: 12,
@@ -164,22 +166,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 20),
                   _InfoTile(
                     icon: Icons.badge_outlined,
-                    label: 'Identifiant',
+                    label: l10n.userIdLabel,
                     value: userId,
                   ),
                   const SizedBox(height: 24),
-                  _SectionTitle(title: 'Personnalisation'),
+                  _SectionTitle(title: l10n.sectionPersonalization),
                   _SettingsCard(
                     children: [
                       SwitchListTile(
                         title: Text(
-                          'Thème sombre',
+                          l10n.darkTheme,
                           style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         subtitle: Text(
                           userPrefs.themeMode == ThemeMode.dark
-                              ? 'Bleu nuit'
-                              : 'Mode clair',
+                              ? l10n.themeDarkSubtitle
+                              : l10n.themeLightSubtitle,
                           style: TextStyle(
                             color: context.smartColors.textSecondary,
                             fontSize: 12,
@@ -202,7 +204,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         leading:
                             Icon(Icons.language_rounded, color: accentColor),
                         title: Text(
-                          'Langue',
+                          l10n.language,
                           style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         subtitle: Text(
@@ -237,7 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         leading:
                             Icon(Icons.text_fields_rounded, color: accentColor),
                         title: Text(
-                          'Police',
+                          l10n.font,
                           style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         subtitle: Text(
@@ -272,11 +274,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         leading:
                             Icon(Icons.format_size_rounded, color: accentColor),
                         title: Text(
-                          'Taille du texte',
+                          l10n.fontSize,
                           style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         subtitle: Text(
-                          userPrefs.fontScaleLabel,
+                          l10n.fontScaleLabel(userPrefs.fontScaleKey),
                           style: TextStyle(
                             color: context.smartColors.textSecondary,
                             fontSize: 12,
@@ -287,11 +289,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           dropdownColor: context.smartColors.card,
                           underline: const SizedBox.shrink(),
                           style: TextStyle(color: context.smartColors.textPrimary),
-                          items: UserAppPreferences.supportedFontScales.entries
+                          items: UserAppPreferences.supportedFontScales.keys
                               .map(
-                                (e) => DropdownMenuItem(
-                                  value: e.key,
-                                  child: Text(e.value),
+                                (key) => DropdownMenuItem(
+                                  value: key,
+                                  child: Text(l10n.fontScaleLabel(key)),
                                 ),
                               )
                               .toList(),
@@ -307,16 +309,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _SectionTitle(title: 'Date et heure (optionnel)'),
+                  _SectionTitle(title: l10n.sectionDateTime),
                   _SettingsCard(
                     children: [
                       SwitchListTile(
                         title: Text(
-                          'Afficher date et heure',
+                          l10n.showDateTime,
                           style: TextStyle(color: context.smartColors.textPrimary),
                         ),
                         subtitle: Text(
-                          'Visible sur le profil',
+                          l10n.showDateTimeHint,
                           style: TextStyle(color: context.smartColors.textSecondary, fontSize: 12),
                         ),
                         secondary:
@@ -329,7 +331,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const Divider(height: 1, indent: 16, endIndent: 16),
                         SwitchListTile(
                           title: Text(
-                            'Format 24 h',
+                            l10n.format24h,
                             style: TextStyle(color: context.smartColors.textPrimary),
                           ),
                           subtitle: Text(
@@ -349,7 +351,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ListTile(
                           leading: Icon(Icons.event_rounded, color: accentColor),
                           title: Text(
-                            'Format de date',
+                            l10n.dateFormat,
                             style: TextStyle(color: context.smartColors.textPrimary),
                           ),
                           trailing: DropdownButton<String>(
@@ -385,7 +387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                       icon: Icon(Icons.home_work_outlined, color: accentColor),
                       label: Text(
-                        'Rejoindre une maison',
+                        l10n.joinHouse,
                         style: TextStyle(color: accentColor),
                       ),
                     ),
@@ -399,18 +401,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         final ok = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('Quitter la maison ?'),
-                            content: const Text(
-                              'Vous n’aurez plus accès aux appareils de cette maison.',
-                            ),
+                            title: Text(l10n.leaveHouseTitle),
+                            content: Text(l10n.leaveHouseBody),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('Annuler'),
+                                child: Text(l10n.cancel),
                               ),
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('Quitter'),
+                                child: Text(l10n.leave),
                               ),
                             ],
                           ),
@@ -424,8 +424,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           await AuthService.instance.saveSession(user);
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Vous avez quitté la maison.'),
+                            SnackBar(
+                              content: Text(l10n.leftHouseSnackbar),
                             ),
                           );
                           setState(() {});
@@ -438,7 +438,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                       icon: Icon(Icons.exit_to_app_rounded, color: warningColor),
                       label: Text(
-                        'Quitter la maison',
+                        l10n.leaveHouse,
                         style: TextStyle(color: warningColor),
                       ),
                     ),
@@ -453,7 +453,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       await AuthService.instance.clearSession();
                     },
                     icon: const Icon(Icons.logout_rounded),
-                    label: Text('Se déconnecter'),
+                    label: Text(l10n.logout),
                   ),
                 ],
               );

@@ -10,13 +10,13 @@ void main() {
         piece: 'salon2',
         type: 'RELAIS',
         label: 'Relais',
-        pin: 3,
+        pin: 4,
         valeur: '1',
         userId: 'usr_test',
       );
       expect(p['actuatorId'], 'relais_salon');
       expect(p['piece'], 'salon2');
-      expect(p['pin'], 3);
+      expect(p['pin'], 4);
       expect(p['valeur'], '1');
       expect(p['categorie'], 'actionneur');
       expect(p['type'], 'RELAIS');
@@ -29,7 +29,7 @@ void main() {
         piece: 'Salon',
         type: 'LIGHT',
         label: 'Lampe',
-        pin: 3,
+        pin: 4,
         userId: 'usr_test',
       );
       expect(p['type'], 'LAMPE');
@@ -45,7 +45,7 @@ void main() {
         valeur: 24.5,
         unit: '',
         userId: 'usr_test',
-        pin: 2,
+        pin: 14,
         temperature: 24.5,
         humidity: 60.2,
       );
@@ -92,7 +92,7 @@ void main() {
         piece: 'garage',
         type: 'SERVO',
         label: 'Servomoteur Portail',
-        pin: 9,
+        pin: 18,
         valeur: '0',
         userId: 'usr_test',
         rfidCible: 'rfid_entree',
@@ -109,7 +109,7 @@ void main() {
         piece: 'garage',
         type: 'SERVO',
         label: 'Servomoteur Portail',
-        pin: 9,
+        pin: 18,
         userId: 'usr_test',
       );
       expect(p['rfid_cible'], '');
@@ -200,6 +200,27 @@ void main() {
       });
       expect(d.isOn, isTrue);
       expect(d.rfidCible, 'rfid_entree');
+    });
+  });
+
+  group('GPIO réservées ESP32', () {
+    test('broches 2,3,9,11,12,13 interdites', () {
+      for (final p in AppareilSpec.reservedPins) {
+        expect(
+          () => AppareilSpec.validatePin(p),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(AppareilSpec.isPinSelectable(p), isFalse);
+      }
+      expect(AppareilSpec.isPinSelectable(4), isTrue);
+    });
+
+    test('ULTRA : echo (pin+1) ne doit pas être réservée', () {
+      expect(
+        () => AppareilSpec.validatePinForDeviceType(8, 'ULTRA'),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(() => AppareilSpec.validatePinForDeviceType(4, 'ULTRA'), returnsNormally);
     });
   });
 }

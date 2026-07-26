@@ -51,8 +51,9 @@ class UserGuideScreen extends StatelessWidget {
                       'L’administrateur plateforme intervient seulement pour '
                       'la création de compte et la promotion en propriétaire.'
                   : auth.isMember
-                      ? 'Vous avez rejoint une maison avec un code invité. '
-                          'Vous pilotez les appareils sans modifier la configuration.'
+                      ? 'Vous pilotez les appareils et pouvez les classer '
+                          'dans une pièce (icône déplacer). La configuration '
+                          'avancée reste au propriétaire.'
                       : 'Ce guide vous aide à utiliser l’application. '
                           'Demandez le rôle propriétaire à l’administrateur '
                           'pour gérer une maison complète.',
@@ -132,7 +133,9 @@ class UserGuideScreen extends StatelessWidget {
                 steps: [
                   'Accueil : interrupteur ON/OFF sur lampe, relais, etc.',
                   'Capteurs en lecture seule (température, mouvement…).',
-                  'Menu ⋮ pour changer de pièce affichée.',
+                  'Icône déplacer sur une carte → ranger l’appareil dans une pièce.',
+                  'Onglet Pièces → touchez une pièce pour voir et déplacer les appareils.',
+                  'Menu ⋮ sur l’Accueil pour filtrer par pièce.',
                 ],
               ),
               const _GuideBlock(
@@ -203,11 +206,14 @@ class UserGuideScreen extends StatelessWidget {
             ? const [
                 'Allumer / éteindre les actionneurs',
                 'Consulter capteurs et dashboard',
-                'Changer de pièce affichée',
+                'Classer un appareil dans une pièce',
+                'Changer de pièce affichée sur l’Accueil',
               ]
             : auth.canAddDevices
                 ? const [
                     'Ajouter des pièces et appareils',
+                    'Choisir une broche à l’ajout (+) ou icône sur la carte',
+                    'Voir les broches déjà occupées (nom de l’appareil)',
                     'Déplacer un appareil entre pièces',
                     'Piloter ON/OFF',
                     'Rejoindre une maison par code',
@@ -224,14 +230,21 @@ class UserGuideScreen extends StatelessWidget {
         : auth.isMember
             ? const [
                 'Ajouter ou supprimer des appareils',
-                'Modifier pièces, broches, RFID',
+                'Créer ou renommer des pièces',
+                'Choisir ou modifier une broche GPIO',
                 'Inviter d’autres personnes',
               ]
-            : const [
-                'Supprimer des appareils (réservé propriétaire)',
-                'Modifier broches GPIO',
-                'Gérer les invités',
-              ];
+            : auth.canAddDevices
+                ? const [
+                    'Supprimer des appareils (réservé propriétaire)',
+                    'Gérer invités, RFID et réglages avancés',
+                    'Détails matériels ESP32 / Arduino (admin plateforme)',
+                  ]
+                : const [
+                    'Supprimer des appareils (réservé propriétaire)',
+                    'Modifier broches GPIO',
+                    'Gérer les invités',
+                  ];
 
     return Material(
       color: c.card,
@@ -380,13 +393,16 @@ class UserGuideScreen extends StatelessWidget {
                 'Vérifiez que vous n’êtes pas invité (membre). '
                     'Créez au moins une pièce dans l’onglet Pièces.'),
             _faq(context, 'Broche déjà utilisée',
-                'Choisissez une autre broche entre 2 et 53, '
-                    'ou modifiez l’appareil existant.'),
+                'Le sélecteur de broche affiche les broches libres et celles '
+                    'déjà prises (avec le nom de l’appareil). Choisis une '
+                    'broche libre ou une autre entre 2 et 53.'),
             _faq(context, 'Maison hors ligne',
                 'L’ESP32 n’est pas connecté. Vérifiez Wi‑Fi et alimentation.'),
             _faq(context, 'Invité ne peut pas ajouter d’appareil',
-                'Normal : seul le propriétaire configure. '
-                    'L’invité pilote ON/OFF uniquement.'),
+                'Normal : le propriétaire (ou un utilisateur autorisé) ajoute '
+                    'les appareils et choisit les broches ; le sélecteur indique '
+                    'celles déjà prises. L’invité pilote ON/OFF et peut classer '
+                    'un appareil dans une pièce existante.'),
           ],
         ),
       ),

@@ -70,14 +70,21 @@ function parseDhtTemp(valeur) {
   return Number.isFinite(temp) ? temp : null;
 }
 
-async function readAlertThreshold(db, userId, defaultThreshold) {
+async function readUserAlertPrefs(db, userId, defaultTempThreshold) {
   const cached = thresholdCache.get(userId);
   const now = Date.now();
-  if (cached && now - cached.at < THRESHOLD_CACHE_MS) {
-    return cached.threshold;
+  if (cached?.prefs && now - cached.at < THRESHOLD_CACHE_MS) {
+    return cached.prefs;
   }
 
-  let threshold = defaultThreshold;
+  const prefs = {
+    notificationsEnabled: true,
+    pirAlertsEnabled: true,
+    dht: { enabled: true, alertAbove: true, threshold: defaultTempThreshold },
+    ultra: { enabled: false, alertAbove: false, threshold: 30 },
+    rfid: { enabled: true },
+  };
+
   try {
     const snap = await db
       .collection("users")
@@ -85,15 +92,40 @@ async function readAlertThreshold(db, userId, defaultThreshold) {
       .collection("preferences")
       .doc("settings")
       .get();
-    const raw = snap.data()?.alertThreshold;
-    const n = Number(raw);
-    if (Number.isFinite(n)) threshold = n;
+    const data = snap.data() ?? {};
+    prefs.notificationsEnabled = data.notifications !== false;
+    prefs.pirAlertsEnabled = data.pirAlertsEnabled !== false;
+    const sensorAlerts = data.sensorAlerts ?? {};
+    const dht = sensorAlerts.DHT ?? {};
+    const ultra = sensorAlerts.ULTRA ?? {};
+    if (typeof dht.enabled === "boolean") prefs.dht.enabled = dht.enabled;
+    if (typeof dht.alertAbove === "boolean") prefs.dht.alertAbove = dht.alertAbove;
+    if (Number.isFinite(Number(dht.threshold))) prefs.dht.threshold = Number(dht.threshold);
+    else if (Number.isFinite(Number(data.alertThreshold))) {
+      prefs.dht.threshold = Number(data.alertThreshold);
+    }
+    if (typeof ultra.enabled === "boolean") prefs.ultra.enabled = ultra.enabled;
+    if (typeof ultra.alertAbove === "boolean") prefs.ultra.alertAbove = ultra.alertAbove;
+    if (Number.isFinite(Number(ultra.threshold))) prefs.ultra.threshold = Number(ultra.threshold);
+    if (typeof sensorAlerts.RFID?.enabled === "boolean") {
+      prefs.rfid.enabled = sensorAlerts.RFID.enabled;
+    }
   } catch (err) {
-    console.warn("[Alert] threshold read failed:", err.message ?? err);
+    console.warn("[Alert] prefs read failed:", err.message ?? err);
   }
 
-  thresholdCache.set(userId, { threshold, at: now });
-  return threshold;
+  thresholdCache.set(userId, { at: now, prefs });
+  return prefs;
+}
+
+function triggersThreshold(value, cfg) {
+  if (!cfg.enabled) return false;
+  return cfg.alertAbove ? value > cfg.threshold : value < cfg.threshold;
+}
+
+async function readAlertThreshold(db, userId, defaultThreshold) {
+  const prefs = await readUserAlertPrefs(db, userId, defaultThreshold);
+  return prefs.dht.threshold;
 }
 
 async function isUidAuthorized(db, userId, uid) {
@@ -175,12 +207,16 @@ export async function evaluateSensorChange(
 ) {
   if (!isSensor(data)) return;
 
+  const userPrefs = await readUserAlertPrefs(db, userId, defaultTempThreshold);
+  if (!userPrefs.notificationsEnabled) return;
+
   const type = normalizeType(data.type);
   const valeur = data.valeur;
   const piece = String(data.piece ?? data.label ?? "").trim();
   const label = String(data.label ?? appareilId).trim();
 
   if (type === "PIR") {
+    if (!userPrefs.pirAlertsEnabled) return;
     if (!truthyValeur(valeur)) return;
     await createAlert(
       db,
@@ -202,16 +238,38 @@ export async function evaluateSensorChange(
   if (type === "DHT" || type === "DHT22" || type === "DHT_TEMP") {
     const temp = parseDhtTemp(valeur);
     if (temp == null) return;
-    const threshold = await readAlertThreshold(db, userId, defaultTempThreshold);
-    if (temp <= threshold) return;
+    if (!triggersThreshold(temp, userPrefs.dht)) return;
+    const threshold = userPrefs.dht.threshold;
+    const dir = userPrefs.dht.alertAbove ? "supérieure" : "inférieure";
     await createAlert(
       db,
       userId,
       {
         type: "temperature",
         severity: "medium",
-        title: "Température élevée",
-        message: `${label}${piece ? ` (${piece})` : ""} : ${temp} °C (seuil ${threshold} °C)`,
+        title: userPrefs.dht.alertAbove ? "Température élevée" : "Température basse",
+        message: `${label}${piece ? ` (${piece})` : ""} : ${temp} °C (seuil ${dir} ${threshold} °C)`,
+        piece,
+        appareilId,
+        sourceValue: valeur,
+      },
+      cooldownMs
+    );
+    return;
+  }
+
+  if (type === "ULTRA") {
+    const dist = Number.parseFloat(stringifyValeur(valeur).replace(",", "."));
+    if (!Number.isFinite(dist)) return;
+    if (!triggersThreshold(dist, userPrefs.ultra)) return;
+    await createAlert(
+      db,
+      userId,
+      {
+        type: "distance",
+        severity: "medium",
+        title: "Distance seuil",
+        message: `${label}${piece ? ` (${piece})` : ""} : ${dist} cm (seuil ${userPrefs.ultra.threshold} cm)`,
         piece,
         appareilId,
         sourceValue: valeur,
@@ -222,6 +280,7 @@ export async function evaluateSensorChange(
   }
 
   if (type === "RFID") {
+    if (!userPrefs.rfid.enabled) return;
     const uid = normalizeUid(valeur);
     if (!uid) return;
     const allowed = await isUidAuthorized(db, userId, uid);

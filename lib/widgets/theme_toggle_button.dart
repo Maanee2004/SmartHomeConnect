@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/services/user_preferences_service.dart';
 
 /// Petit bouton soleil / lune pour basculer entre thème clair et sombre.
@@ -15,7 +16,7 @@ class ThemeToggleButton extends StatelessWidget {
         );
 
     return IconButton(
-      tooltip: isDark ? 'Mode clair' : 'Mode sombre',
+      tooltip: isDark ? context.l10n.themeTooltipLight : context.l10n.themeTooltipDark,
       icon: Icon(
         isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
         size: size,

@@ -21,6 +21,9 @@ class RestHomeRepository implements HomeRepository {
   Future<List<int>> availablePins() async => [];
 
   @override
+  Future<Map<int, String>> pinUsageLabels() async => {};
+
+  @override
   Stream<List<HouseRoom>> watchRooms() {
     return Stream<List<HouseRoom>>.error(
       UnimplementedError(

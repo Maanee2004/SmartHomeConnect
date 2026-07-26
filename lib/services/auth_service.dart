@@ -6,7 +6,10 @@ import 'package:smart_home/models/app_user.dart';
 import 'package:smart_home/models/user_role.dart';
 import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/services/house_invites_repository.dart';
+import 'package:smart_home/services/house_resolver.dart';
 import 'package:smart_home/services/user_preferences_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 /// Session locale + rôle (`admin` / `owner` / `user`) pour router l’interface.
 class AuthService {
@@ -15,12 +18,12 @@ class AuthService {
   static const String _cachedUserEmailKey = 'cached_user_email';
   static const String _cachedUserRoleKey = 'cached_user_role';
   static const String _cachedHouseOwnerKey = 'cached_house_owner_id';
+  static const String _cachedActiveHouseIdKey = 'cached_active_house_id';
 
   AuthService._();
 
   static final AuthService instance = AuthService._();
 
-  /// Notifie [MaterialApp] pour basculer login ↔ shell sans empiler les routes.
   final ValueNotifier<bool> authNotifier = ValueNotifier<bool>(false);
 
   final StreamController<String?> _updates =
@@ -30,49 +33,59 @@ class AuthService {
   String? _userEmail;
   String _role = UserRole.user;
   String? _houseOwnerUserId;
+  String? _activeHouseId;
 
   String? get currentUserId => _userId;
   String? get currentUserEmail => _userEmail;
   String get currentRole => _role;
   String? get houseOwnerUserId => _houseOwnerUserId;
+
+  /// Document Firestore `maisons/{activeHouseId}` pour l’utilisateur connecté.
+  String? get activeHouseId => _activeHouseId;
+
   bool get isLoggedIn => _userId != null && _userId!.isNotEmpty;
 
-  /// Admin plateforme (interface admin globale).
   bool get isAdmin => UserRole.isAdmin(_role);
 
-  /// Rôle propriétaire enregistré dans Firestore.
   bool get isOwnerRole => UserRole.isOwner(_role);
 
-  /// Membre rattaché à la maison d’un autre utilisateur.
   bool get isMember =>
-      _houseOwnerUserId != null && _houseOwnerUserId!.isNotEmpty;
+      (_houseOwnerUserId != null && _houseOwnerUserId!.isNotEmpty) ||
+      (_activeHouseId != null &&
+          _userId != null &&
+          _activeHouseId != _userId &&
+          !isOwnerRole);
 
-  /// Propriétaire de sa propre maison (rôle `owner` explicite, assigné par l’admin).
   bool get isHouseOwner {
-    if (isMember || isAdmin) return false;
+    if (isAdmin) return false;
+    if (_houseOwnerUserId != null && _houseOwnerUserId!.isNotEmpty) {
+      return false;
+    }
     return UserRole.isOwner(_role);
   }
 
   String get roleLabel => UserRole.label(_role);
 
-  /// Rejoint une maison avec un code (utilisateur standard non membre).
   bool get canJoinHouse =>
       isLoggedIn && !isAdmin && !isHouseOwner && !isMember;
 
-  /// Gère les codes et membres invités.
   bool get canManageInvites => isHouseOwner;
 
-  /// Pièces — utilisateur connecté (sauf membre invité).
   bool get canAddRooms =>
       isLoggedIn && !isMember && (isAdmin || isHouseOwner || UserRole.isUser(_role));
 
-  /// CRUD complet — admin plateforme ou propriétaire (suppression, broches, seed).
   bool get canManageDevices => isAdmin || isHouseOwner;
 
-  /// Ajouter / déplacer des appareils — utilisateurs standards (pas les invités).
   bool get canAddDevices => canAddRooms;
 
-  /// Alias legacy (appareils / seed démo).
+  /// Ajout d’appareil et choix / modification de broche (pas les invités).
+  bool get canConfigureDevicePins => canAddDevices;
+
+  /// Ranger un appareil dans une pièce (champ `piece`) — sans supprimer l’appareil.
+  bool get canAssignDevicesToRooms =>
+      isLoggedIn &&
+      (isAdmin || isHouseOwner || UserRole.isUser(_role) || isMember);
+
   bool get canManageHome => canManageDevices;
 
   Stream<String?> userNameStream() async* {
@@ -88,9 +101,11 @@ class AuthService {
     final owner = prefs.getString(_cachedHouseOwnerKey)?.trim();
     _houseOwnerUserId =
         owner != null && owner.isNotEmpty ? owner : null;
+    final house = prefs.getString(_cachedActiveHouseIdKey)?.trim();
+    _activeHouseId = house != null && house.isNotEmpty ? house : null;
     authNotifier.value = isLoggedIn;
     if (isLoggedIn) {
-      await UserPreferencesService.instance.loadFromFirestore(_userId!);
+      unawaited(UserPreferencesService.instance.loadFromFirestore(_userId!));
     }
   }
 
@@ -105,11 +120,23 @@ class AuthService {
     return null;
   }
 
+  Future<String> _resolveActiveHouseId(AppUser user) async {
+    if (Firebase.apps.isEmpty) {
+      return user.ownedHouseId ?? user.memberHouseId ?? user.userId;
+    }
+    return HouseResolver.resolveHouseIdForUser(
+      user,
+      FirebaseFirestore.instance,
+    );
+  }
+
   Future<void> saveSession(AppUser user) async {
     _userId = user.userId;
     _userEmail = user.email;
     _role = user.role;
     _houseOwnerUserId = user.houseOwnerUserId;
+    _activeHouseId = await _resolveActiveHouseId(user);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cachedUserIdKey, user.userId);
     await prefs.setString(_cachedUserEmailKey, user.email);
@@ -119,13 +146,19 @@ class AuthService {
     } else {
       await prefs.remove(_cachedHouseOwnerKey);
     }
+    if (_activeHouseId != null && _activeHouseId!.isNotEmpty) {
+      await prefs.setString(_cachedActiveHouseIdKey, _activeHouseId!);
+    } else {
+      await prefs.remove(_cachedActiveHouseIdKey);
+    }
     await setCachedUserName(user.name);
     _notifyAuthChanged();
     unawaited(UserPreferencesService.instance.loadFromFirestore(user.userId));
     unawaited(FirestoreHomeRepository.instance.resetAndReload());
     if (UserRole.isOwner(user.role) &&
         (user.houseOwnerUserId == null || user.houseOwnerUserId!.isEmpty)) {
-      unawaited(HouseInvitesRepository.instance.ensurePrimaryInvite(user.userId));
+      final houseId = _activeHouseId ?? user.userId;
+      unawaited(HouseInvitesRepository.instance.ensurePrimaryInvite(houseId));
     }
   }
 
@@ -141,8 +174,9 @@ class AuthService {
     if (!_updates.isClosed) _updates.add(t);
   }
 
-  /// Recharge le profil Firestore (ex. après rejoindre / quitter une maison).
-  Future<void> refreshFromFirestore(Future<AppUser?> Function(String userId) fetchUser) async {
+  Future<void> refreshFromFirestore(
+    Future<AppUser?> Function(String userId) fetchUser,
+  ) async {
     final id = _userId;
     if (id == null || id.isEmpty) return;
     final user = await fetchUser(id);
@@ -154,12 +188,14 @@ class AuthService {
     _userEmail = null;
     _role = UserRole.user;
     _houseOwnerUserId = null;
+    _activeHouseId = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cachedUserIdKey);
     await prefs.remove(_cachedUserEmailKey);
     await prefs.remove(_cachedUserNameKey);
     await prefs.remove(_cachedUserRoleKey);
     await prefs.remove(_cachedHouseOwnerKey);
+    await prefs.remove(_cachedActiveHouseIdKey);
     if (!_updates.isClosed) _updates.add(null);
     _notifyAuthChanged();
   }

@@ -18,10 +18,18 @@ class HomeShellScreen extends StatefulWidget {
 
 class _HomeShellScreenState extends State<HomeShellScreen> {
   int _tab = 0;
+  String? _dashboardFocusRoomId;
 
   void _selectTab(int index) {
     if (_tab == index) return;
     setState(() => _tab = index);
+  }
+
+  void _openDashboardForRoom(String roomId) {
+    setState(() {
+      _dashboardFocusRoomId = roomId;
+      _tab = 0;
+    });
   }
 
   Widget _bottomBar() {
@@ -53,10 +61,12 @@ class _HomeShellScreenState extends State<HomeShellScreen> {
                     DashboardScreen(
                       bottomNavigationBar: _bottomBar(),
                       onGoHome: () => _selectTab(0),
+                      focusRoomId: _dashboardFocusRoomId,
                     ),
                     PiecesScreen(
                       bottomNavigationBar: _bottomBar(),
                       onOpenDashboard: () => _selectTab(0),
+                      onBrowseRoom: _openDashboardForRoom,
                     ),
                     ProfileScreen(bottomNavigationBar: _bottomBar()),
                     SettingsScreen(bottomNavigationBar: _bottomBar()),

@@ -115,8 +115,11 @@ class DeviceSetupGuideScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'La suppression et la modification des broches sont réservées '
-              'au propriétaire ou à l’administrateur.',
+              'À l’ajout (+) ou via l’icône broche sur la carte, le sélecteur '
+              'montre les broches libres et celles déjà utilisées (nom de '
+              'l’appareil). Les infos matérielles ESP32 (broches réservées) '
+              'sont visibles uniquement pour l’administrateur plateforme. '
+              'La suppression reste réservée au propriétaire.',
               style: TextStyle(color: c.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 24),

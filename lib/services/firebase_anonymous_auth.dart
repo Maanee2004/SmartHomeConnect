@@ -2,23 +2,32 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
-/// Auth Firebase anonyme — optionnelle (l’app fonctionne sans elle).
+/// Auth Firebase anonyme — une seule tentative à la fois (évite les blocages Web).
 class FirebaseAnonymousAuth {
   FirebaseAnonymousAuth._();
 
+  static Future<void>? _inFlight;
+
+  static Duration get _timeout =>
+      kIsWeb ? const Duration(seconds: 8) : const Duration(seconds: 12);
+
   /// Tente la connexion anonyme ; n’interrompt jamais l’app si désactivée.
-  static Future<void> trySignIn({int maxAttempts = 2}) async {
-    if (Firebase.apps.isEmpty) return;
-    if (FirebaseAuth.instance.currentUser != null) return;
+  static Future<void> trySignIn({int maxAttempts = 2}) {
+    if (Firebase.apps.isEmpty) return Future.value();
+    if (FirebaseAuth.instance.currentUser != null) return Future.value();
+    return _inFlight ??= _signInLoop(maxAttempts).whenComplete(() {
+      _inFlight = null;
+    });
+  }
+
+  static Future<void> _signInLoop(int maxAttempts) async {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         await FirebaseAuth.instance.signInAnonymously().timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => throw FirebaseAuthException(
-            code: 'timeout',
-            message: 'Connexion Firebase Auth expirée.',
-          ),
+          _timeout,
+          onTimeout: () => throw TimeoutException('auth anonyme'),
         );
         return;
       } on FirebaseAuthException catch (e) {
@@ -29,7 +38,7 @@ class FirebaseAnonymousAuth {
         print('[Firebase] auth anonyme (tentative ${attempt + 1}): timeout');
       }
       if (attempt + 1 < maxAttempts) {
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
       }
     }
   }

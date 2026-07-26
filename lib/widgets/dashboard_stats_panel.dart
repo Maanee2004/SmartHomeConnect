@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/models/home_dashboard_stats.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
@@ -19,6 +20,7 @@ class DashboardStatsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.smartColors;
     final r = context.responsive;
+    final l = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -28,7 +30,7 @@ class DashboardStatsPanel extends StatelessWidget {
             Icon(Icons.insights_rounded, size: 18, color: accentColor),
             const SizedBox(width: 8),
             Text(
-              'Tableau de bord',
+              l.dashboardStatsTitle,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     color: c.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -57,23 +59,23 @@ class DashboardStatsPanel extends StatelessWidget {
           children: [
             _StatTile(
               icon: Icons.power_rounded,
-              label: 'Allumés',
+              label: l.statOn,
               value: '${stats.onCount}',
-              subtitle: 'actionneurs ON',
+              subtitle: l.statOnSubtitle,
               color: warningColor,
             ),
             _StatTile(
               icon: Icons.home_work_outlined,
-              label: 'Total',
+              label: l.statTotal,
               value: '${stats.total}',
-              subtitle: '${stats.sensorCount} cap. · ${stats.actuatorCount} act.',
+              subtitle: l.statTotalSubtitle(stats.sensorCount, stats.actuatorCount),
               color: accentColor,
             ),
             _StatTile(
               icon: Icons.bolt_rounded,
-              label: 'Conso',
+              label: l.statConsumption,
               value: stats.wattsLabel,
-              subtitle: 'estim. instant.',
+              subtitle: l.statConsumptionSubtitle,
               color: infoColor,
             ),
           ],
@@ -91,7 +93,7 @@ class DashboardStatsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'Charge estimée / 500 W',
+            l.loadEstimate500,
             style: TextStyle(color: c.textSecondary, fontSize: 10),
           ),
         ],

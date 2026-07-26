@@ -22,7 +22,6 @@ class FirestoreHomeRepository implements HomeRepository {
   factory FirestoreHomeRepository() => instance;
 
   FirestorePaths? _paths;
-  Future<void>? _detecting;
   String? _lastBootstrapNote;
   StreamController<List<HouseRoom>>? _roomsController;
   StreamController<List<Device>>? _devicesController;
@@ -32,7 +31,7 @@ class FirestoreHomeRepository implements HomeRepository {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _isonlineFirestoreSub;
   String? _streamsUserId;
-  String? _adminTargetUserId;
+  String? _adminTargetHouseId;
   List<HouseRoom> _cachedRooms = const [];
   List<Device> _cachedDevices = const [];
   bool _cachedHouseOnline = false;
@@ -46,8 +45,12 @@ class FirestoreHomeRepository implements HomeRepository {
       instance._lastBootstrapNote = 'Firebase non initialisé';
       return;
     }
+    if (!AuthService.instance.isLoggedIn) {
+      instance._lastBootstrapNote = 'session absente — streams différés';
+      return;
+    }
     try {
-      await FirebaseAnonymousAuth.trySignIn();
+      await FirebaseAnonymousAuth.trySignIn(maxAttempts: 1);
       instance._lastBootstrapNote =
           'uid=${FirebaseAuth.instance.currentUser?.uid}';
     } on FirebaseAuthException catch (e) {
@@ -69,14 +72,7 @@ class FirestoreHomeRepository implements HomeRepository {
       _paths = FirestorePaths.fallbackWithoutFirebase();
       return;
     }
-    _detecting ??= _runDetect();
-    await _detecting;
-  }
-
-  Future<void> _runDetect() async {
-    _paths = await FirestorePaths.detectWritable(FirebaseFirestore.instance);
-    // ignore: avoid_print
-    print('[Firestore] ${_paths?.debugLabel}');
+    _paths ??= FirestorePaths.instance;
   }
 
   Future<void> _ensureFirebaseAuth() async {
@@ -94,7 +90,6 @@ class FirestoreHomeRepository implements HomeRepository {
 
   Future<void> resetAndReload() async {
     _paths = null;
-    _detecting = null;
     _streamsUserId = null;
     await _cancelFirestoreSubscriptions();
     await _ensureFirebaseAuth();
@@ -117,14 +112,19 @@ class FirestoreHomeRepository implements HomeRepository {
 
   String? get _currentUserId => AuthService.instance.currentUserId;
 
-  String? get adminTargetUserId => _adminTargetUserId;
+  String? get adminTargetHouseId => _adminTargetHouseId;
 
-  /// Admin : cible la maison d’un utilisateur pour CRUD / streams.
-  void setAdminTargetUser(String? userId) {
-    final t = userId?.trim();
-    _adminTargetUserId = t != null && t.isNotEmpty ? t : null;
+  /// Admin : cible une maison pour CRUD / streams (`maisons/{houseId}`).
+  void setAdminTargetHouse(String? houseId) {
+    final t = houseId?.trim();
+    _adminTargetHouseId = t != null && t.isNotEmpty ? t : null;
     unawaited(resetAndReload());
   }
+
+  /// Alias legacy.
+  void setAdminTargetUser(String? houseId) => setAdminTargetHouse(houseId);
+
+  String? get adminTargetUserId => adminTargetHouseId;
 
   CollectionReference<Map<String, dynamic>> get devicesCollection =>
       _houseAppareils(_scopeUserId());
@@ -142,15 +142,17 @@ class FirestoreHomeRepository implements HomeRepository {
   DocumentReference<Map<String, dynamic>> _houseIsonlineRef(String userId) =>
       FirestoreHousePaths.isonlineDoc(_db, userId);
 
-  String? _streamUserId() {
-    if (AuthService.instance.isAdmin) return _adminTargetUserId;
+  String? _streamHouseId() {
+    if (AuthService.instance.isAdmin) return _adminTargetHouseId;
+    final active = AuthService.instance.activeHouseId;
+    if (active != null && active.isNotEmpty) return active;
     final owner = AuthService.instance.houseOwnerUserId;
     if (owner != null && owner.isNotEmpty) return owner;
     return _currentUserId;
   }
 
   String _scopeUserId() {
-    final id = _streamUserId();
+    final id = _streamHouseId();
     if (id == null || id.isEmpty) {
       throw StateError('Utilisateur non connecté.');
     }
@@ -161,6 +163,19 @@ class FirestoreHomeRepository implements HomeRepository {
 
   void _requireHomeManagePermission() {
     if (!AuthService.instance.canManageHome) {
+      throw const HomePermissionDeniedException();
+    }
+  }
+
+  void _requireAssignDeviceToRoomPermission() {
+    if (!AuthService.instance.canAssignDevicesToRooms) {
+      throw const HomePermissionDeniedException();
+    }
+  }
+
+  /// Ajout d’appareil / choix de broche (propriétaire ou utilisateur autorisé).
+  void _requireDeviceSetupPermission() {
+    if (!AuthService.instance.canConfigureDevicePins) {
       throw const HomePermissionDeniedException();
     }
   }
@@ -190,8 +205,8 @@ class FirestoreHomeRepository implements HomeRepository {
     for (final doc in docs) {
       final data = doc.data();
       final id = (data['id'] as String?)?.trim() ?? doc.id;
-      final name = (data['name'] as String?)?.trim() ??
-          (data['nom'] as String?)?.trim();
+      final name =
+          (data['name'] as String?)?.trim() ?? (data['nom'] as String?)?.trim();
       if (id.isNotEmpty && name != null && name.isNotEmpty) {
         rooms.add(HouseRoom(id: id, name: name));
       }
@@ -289,7 +304,9 @@ class FirestoreHomeRepository implements HomeRepository {
 
   Future<void> _bindUserStreams() {
     final pending = _bindUserStreamsTask;
-    final task = (pending != null ? pending.then((_) => _runBindUserStreams()) : _runBindUserStreams());
+    final task = (pending != null
+        ? pending.then((_) => _runBindUserStreams())
+        : _runBindUserStreams());
     _bindUserStreamsTask = task;
     return task.whenComplete(() {
       if (identical(_bindUserStreamsTask, task)) {
@@ -299,7 +316,7 @@ class FirestoreHomeRepository implements HomeRepository {
   }
 
   Future<void> _runBindUserStreams() async {
-    final userId = _streamUserId();
+    final userId = _streamHouseId();
     if (_streamsUserId == userId &&
         _piecesFirestoreSub != null &&
         _devicesFirestoreSub != null &&
@@ -366,8 +383,7 @@ class FirestoreHomeRepository implements HomeRepository {
 
       _isonlineFirestoreSub = _houseIsonlineRef(userId).snapshots().listen(
         (s) {
-          _cachedHouseOnline =
-              s.data()?[FirestoreSchema.fieldIsonline] == true;
+          _cachedHouseOnline = s.data()?[FirestoreSchema.fieldIsonline] == true;
           _emitHouseOnline();
         },
         onError: (e, st) => _houseOnlineController?.addError(e, st),
@@ -430,8 +446,8 @@ class FirestoreHomeRepository implements HomeRepository {
   }
 
   String _roomOwnerUserId() {
-    if (AuthService.instance.isAdmin && _adminTargetUserId != null) {
-      return _adminTargetUserId!;
+    if (AuthService.instance.isAdmin && _adminTargetHouseId != null) {
+      return _adminTargetHouseId!;
     }
     final linkedOwner = AuthService.instance.houseOwnerUserId;
     if (linkedOwner != null && linkedOwner.isNotEmpty) {
@@ -466,7 +482,7 @@ class FirestoreHomeRepository implements HomeRepository {
       'name': room.name,
       FirestoreSchema.fieldUserId: userId,
     });
-    if (userId == _streamUserId()) {
+    if (userId == _streamHouseId()) {
       final idx = _cachedRooms.indexWhere((r) => r.id == room.id);
       final updated = [..._cachedRooms];
       if (idx >= 0) {
@@ -481,7 +497,7 @@ class FirestoreHomeRepository implements HomeRepository {
 
   Future<void> _deletePieceDoc(String userId, String roomId) async {
     await _housePieces(userId).doc(roomId).delete();
-    if (userId == _streamUserId()) {
+    if (userId == _streamHouseId()) {
       _cachedRooms = _cachedRooms.where((r) => r.id != roomId).toList();
       _refreshRoomsStream();
     }
@@ -545,6 +561,17 @@ class FirestoreHomeRepository implements HomeRepository {
         (a == 'DHT_HUM' && b == 'DHT_TEMP');
   }
 
+  static String _deviceLabelFromDoc(
+    String docId,
+    Map<String, dynamic> data,
+  ) {
+    final label = (data['label'] as String?)?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    final name = (data['name'] as String?)?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return docId;
+  }
+
   Future<void> _assertPinAvailable(
     int pin, {
     String? excludeDeviceId,
@@ -552,6 +579,9 @@ class FirestoreHomeRepository implements HomeRepository {
   }) async {
     final userId = _requireUserId();
     AppareilSpec.validatePin(pin);
+    if (newDeviceType != null) {
+      AppareilSpec.validatePinForDeviceType(pin, newDeviceType);
+    }
     final snap = await _houseAppareils(userId).get();
     for (final doc in snap.docs) {
       if (excludeDeviceId != null && doc.id == excludeDeviceId) continue;
@@ -564,7 +594,11 @@ class FirestoreHomeRepository implements HomeRepository {
             )) {
           continue;
         }
-        throw PinAlreadyAssignedException(pin, existingDeviceId: doc.id);
+        throw PinAlreadyAssignedException(
+          pin,
+          existingDeviceId: doc.id,
+          existingDeviceName: _deviceLabelFromDoc(doc.id, doc.data()),
+        );
       }
     }
   }
@@ -592,8 +626,23 @@ class FirestoreHomeRepository implements HomeRepository {
     }
     return [
       for (var i = AppareilSpec.minPin; i <= AppareilSpec.maxPin; i++)
-        if (!used.contains(i)) i,
+        if (!used.contains(i) && AppareilSpec.isPinSelectable(i)) i,
     ];
+  }
+
+  @override
+  Future<Map<int, String>> pinUsageLabels() async {
+    await ensureLayoutResolved();
+    final userId = _requireUserId();
+    final out = <int, String>{};
+    final snap = await _houseAppareils(userId).get();
+    for (final doc in snap.docs) {
+      final p = doc.data()[AppareilSpec.fieldPin];
+      if (p is num) {
+        out[p.toInt()] = _deviceLabelFromDoc(doc.id, doc.data());
+      }
+    }
+    return out;
   }
 
   @override
@@ -680,8 +729,7 @@ class FirestoreHomeRepository implements HomeRepository {
 
   Future<String> _allocateUniqueRoomDocId(
       String baseSlug, String userId) async {
-    final ids =
-        (await _loadRoomsFor(userId)).map((r) => r.id).toSet();
+    final ids = (await _loadRoomsFor(userId)).map((r) => r.id).toSet();
     if (!ids.contains(baseSlug)) return baseSlug;
     for (var i = 2; i < 10000; i++) {
       final c = '${baseSlug}_$i';
@@ -760,7 +808,8 @@ class FirestoreHomeRepository implements HomeRepository {
     return '${r}_$n'.length > 120 ? '${r}_${n.substring(0, 56)}' : '${r}_$n';
   }
 
-  Future<String> _allocateUniqueDeviceDocId(String baseSlug, String userId) async {
+  Future<String> _allocateUniqueDeviceDocId(
+      String baseSlug, String userId) async {
     final col = _houseAppareils(userId);
     if (!(await col.doc(baseSlug).get()).exists) return baseSlug;
     for (var i = 2; i < 10000; i++) {
@@ -801,7 +850,7 @@ class FirestoreHomeRepository implements HomeRepository {
     Map<String, dynamic>? initialState,
     String? rfidCible,
   }) async {
-    _requireHomeManagePermission();
+    _requireDeviceSetupPermission();
     await ensureLayoutResolved();
     final n = name.trim();
     final rid = roomId.trim();
@@ -815,7 +864,8 @@ class FirestoreHomeRepository implements HomeRepository {
         ? categorie!.trim()
         : (_isSensorType(ty) ? 'capteur' : 'actionneur');
 
-    final id = await _allocateUniqueDeviceDocId(_deviceDocIdBase(rid, n), userId);
+    final id =
+        await _allocateUniqueDeviceDocId(_deviceDocIdBase(rid, n), userId);
     Map<String, dynamic> payload;
     try {
       if (cat == 'capteur') {
@@ -906,7 +956,7 @@ class FirestoreHomeRepository implements HomeRepository {
     double? temperature,
     double? humidity,
   }) async {
-    _requireHomeManagePermission();
+    _requireDeviceSetupPermission();
     final temp = temperature ?? 24.5;
     final hum = humidity ?? 60.0;
     await ensureLayoutResolved();
@@ -947,7 +997,7 @@ class FirestoreHomeRepository implements HomeRepository {
 
   @override
   Future<void> updateDevicePiece(String deviceId, String roomId) async {
-    _requireHomeManagePermission();
+    _requireAssignDeviceToRoomPermission();
     await ensureLayoutResolved();
     final id = deviceId.trim();
     final rid = roomId.trim();
@@ -973,18 +1023,18 @@ class FirestoreHomeRepository implements HomeRepository {
 
   @override
   Future<void> updateDevicePin(String deviceId, int pin) async {
-    _requireHomeManagePermission();
+    _requireDeviceSetupPermission();
     await ensureLayoutResolved();
     final id = deviceId.trim();
     if (id.isEmpty) return;
 
-    AppareilSpec.validatePin(pin);
     final scopeUserId = _scopeUserId();
     final ref = _houseAppareils(scopeUserId).doc(id);
     final snap = await ref.get();
     if (!snap.exists || !_docBelongsToUser(snap.data()!, scopeUserId)) return;
 
     final deviceType = AppareilSpec.typeFromData(snap.data()!, id);
+    AppareilSpec.validatePinForDeviceType(pin, deviceType);
     await _assertPinAvailable(
       pin,
       excludeDeviceId: id,
@@ -1151,7 +1201,7 @@ class FirestoreHomeRepository implements HomeRepository {
       label: 'Capteur Température/Humidité',
       valeur: AppareilSpec.formatDhtValeur(24.5, 60.2),
       unit: AppareilSpec.unitCelsiusPercent,
-      pin: 2,
+      pin: 14,
       temperature: 24.5,
       humidity: 60.2,
     );
@@ -1188,7 +1238,7 @@ class FirestoreHomeRepository implements HomeRepository {
       piece: 'Salon',
       label: 'Relais',
       type: 'RELAIS',
-      pin: 3,
+      pin: 15,
       valeur: '0',
     );
     await setActuator(
@@ -1204,15 +1254,15 @@ class FirestoreHomeRepository implements HomeRepository {
       piece: 'Garage',
       label: 'Servomoteur Portail',
       type: 'SERVO',
-      pin: 9,
+      pin: 18,
       valeur: '0',
     );
     await instance._houseAppareils(userId).doc('servo_porte').set(
-          {
-            AppareilSpec.fieldRfidCible: 'rfid_entree',
-          },
-          SetOptions(merge: true),
-        );
+      {
+        AppareilSpec.fieldRfidCible: 'rfid_entree',
+      },
+      SetOptions(merge: true),
+    );
     await setActuator(
       'matrice_max',
       piece: 'Salon',

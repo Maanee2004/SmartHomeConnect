@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smart_home/models/user_role.dart';
+import 'package:smart_home/services/firestore_schema.dart';
 
 class AppUser {
   const AppUser({
@@ -10,6 +11,8 @@ class AppUser {
     required this.passwordHash,
     this.role = UserRole.user,
     this.houseOwnerUserId,
+    this.ownedHouseId,
+    this.memberHouseId,
     this.createdAt,
   });
 
@@ -22,8 +25,14 @@ class AppUser {
   /// `admin`, `owner` ou `user` (défaut).
   final String role;
 
-  /// Si renseigné, l’utilisateur consulte la maison de ce propriétaire (lecture).
+  /// Legacy : propriétaire dont on rejoint la maison via code.
   final String? houseOwnerUserId;
+
+  /// Maison gérée (doc `maisons/{ownedHouseId}`), si différente de [userId].
+  final String? ownedHouseId;
+
+  /// Maison consultée en tant qu’invité (assignation admin ou directe).
+  final String? memberHouseId;
 
   final DateTime? createdAt;
 
@@ -32,19 +41,21 @@ class AppUser {
   bool get isOwner => UserRole.isOwner(role);
 
   /// Propriétaire (rôle `owner` assigné par l’admin).
-  bool get isHouseOwner =>
-      !isMemberOfAnotherHouse && isOwner;
+  bool get isHouseOwner => !isMemberOfAnotherHouse && isOwner;
 
   bool get isMemberOfAnotherHouse =>
-      houseOwnerUserId != null && houseOwnerUserId!.isNotEmpty;
+      (memberHouseId != null && memberHouseId!.isNotEmpty) ||
+      (houseOwnerUserId != null && houseOwnerUserId!.isNotEmpty);
 
   factory AppUser.fromFirestore(String id, Map<String, dynamic> data) {
     final created = data['createdAt'];
     DateTime? at;
     if (created is Timestamp) at = created.toDate();
     final owner = (data['houseOwnerUserId'] as String?)?.trim();
+    final owned = (data[FirestoreSchema.fieldOwnedHouseId] as String?)?.trim();
+    final memberHouse =
+        (data[FirestoreSchema.fieldMemberHouseId] as String?)?.trim();
     return AppUser(
-      // Toujours l’ID document Firestore (évite les échecs admin si le champ diverge).
       userId: id,
       name: (data['name'] as String?)?.trim() ?? '',
       email: (data['email'] as String?)?.trim() ?? '',
@@ -53,6 +64,9 @@ class AppUser {
       role: UserRole.normalize(data['role'] as String?),
       houseOwnerUserId:
           owner != null && owner.isNotEmpty ? owner : null,
+      ownedHouseId: owned != null && owned.isNotEmpty ? owned : null,
+      memberHouseId:
+          memberHouse != null && memberHouse.isNotEmpty ? memberHouse : null,
       createdAt: at,
     );
   }
@@ -66,6 +80,10 @@ class AppUser {
         'role': role,
         if (houseOwnerUserId != null && houseOwnerUserId!.isNotEmpty)
           'houseOwnerUserId': houseOwnerUserId,
+        if (ownedHouseId != null && ownedHouseId!.isNotEmpty)
+          FirestoreSchema.fieldOwnedHouseId: ownedHouseId,
+        if (memberHouseId != null && memberHouseId!.isNotEmpty)
+          FirestoreSchema.fieldMemberHouseId: memberHouseId,
         'createdAt': FieldValue.serverTimestamp(),
       };
 }

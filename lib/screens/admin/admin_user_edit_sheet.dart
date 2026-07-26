@@ -4,6 +4,7 @@ import 'package:smart_home/models/app_user.dart';
 import 'package:smart_home/models/house_summary.dart';
 import 'package:smart_home/models/user_role.dart';
 import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/admin_repository.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
@@ -208,7 +209,7 @@ class _AdminUserEditSheetState extends State<_AdminUserEditSheet> {
                   ),
                 ),
             ],
-            if (user.houseOwnerUserId != null) ...[
+            if (user.memberHouseId != null || user.houseOwnerUserId != null) ...[
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _saving
@@ -225,7 +226,7 @@ class _AdminUserEditSheetState extends State<_AdminUserEditSheet> {
                       },
                 icon: const Icon(Icons.link_off_rounded),
                 label: Text(
-                  'Retirer de la maison (${user.houseOwnerUserId})',
+                  'Retirer de la maison (${user.memberHouseId ?? user.houseOwnerUserId})',
                 ),
               ),
             ] else if (!_isAdmin && !_isOwner) ...[
@@ -238,7 +239,7 @@ class _AdminUserEditSheetState extends State<_AdminUserEditSheet> {
                           _snack('Aucune maison disponible.');
                           return;
                         }
-                        final ownerId = await showDialog<String>(
+                        final houseId = await showDialog<String>(
                           context: context,
                           builder: (dCtx) => SimpleDialog(
                             title: Text(
@@ -249,23 +250,60 @@ class _AdminUserEditSheetState extends State<_AdminUserEditSheet> {
                               for (final h in widget.houses)
                                 SimpleDialogOption(
                                   onPressed: () =>
-                                      Navigator.pop(dCtx, h.ownerUserId),
-                                  child: Text(h.ownerName),
+                                      Navigator.pop(dCtx, h.houseId),
+                                  child: Text(h.displayTitle),
                                 ),
                             ],
                           ),
                         );
-                        if (ownerId == null || !mounted) return;
+                        if (houseId == null || !mounted) return;
+
+                        final house = widget.houses
+                            .where((h) => h.houseId == houseId)
+                            .firstOrNull;
+                        final asOwner = house != null && !house.hasOwner
+                            ? await showDialog<bool>(
+                                context: context,
+                                builder: (dCtx) => AlertDialog(
+                                  title: const Text('Rôle'),
+                                  content: const Text(
+                                    'Assigner cet utilisateur comme propriétaire ou invité ?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dCtx, false),
+                                      child: const Text('Invité'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dCtx, true),
+                                      child: const Text('Propriétaire'),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : false;
+
                         try {
-                          await FirestoreAuthRepository.instance
-                              .assignUserToHouse(
-                            ownerUserId: ownerId,
-                            memberUserId: user.userId,
-                          );
+                          if (asOwner == true) {
+                            await AdminRepository.instance.assignOwnerToHouse(
+                              houseId: houseId,
+                              ownerUserId: user.userId,
+                            );
+                          } else {
+                            await FirestoreAuthRepository.instance
+                                .assignUserToHouse(
+                              houseId: houseId,
+                              memberUserId: user.userId,
+                            );
+                          }
                           if (!context.mounted) return;
                           Navigator.pop(context);
                           _snack('Utilisateur rattaché.');
                         } on AuthFailure catch (e) {
+                          _snack(e.message);
+                        } on AdminFailure catch (e) {
                           _snack(e.message);
                         }
                       },

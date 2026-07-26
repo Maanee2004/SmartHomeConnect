@@ -45,6 +45,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final phoneCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     String? selectedHouseId;
+    String houseLinkRole = 'member'; // member | owner
 
     try {
       final ok = await showModalBottomSheet<bool>(
@@ -63,6 +64,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             ),
             child: StatefulBuilder(
               builder: (ctx, setModalState) {
+                final selectedHouse = selectedHouseId == null
+                    ? null
+                    : houses
+                        .where((h) => h.houseId == selectedHouseId)
+                        .firstOrNull;
+                final canPickOwner = selectedHouse != null && !selectedHouse.hasOwner;
+
                 return SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -91,13 +99,53 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                           const DropdownMenuEntry(value: null, label: 'Aucune'),
                           for (final h in houses)
                             DropdownMenuEntry(
-                              value: h.ownerUserId,
-                              label: h.ownerName,
+                              value: h.houseId,
+                              label: h.displayTitle,
                             ),
                         ],
-                        onSelected: (v) =>
-                            setModalState(() => selectedHouseId = v),
+                        onSelected: (v) => setModalState(() {
+                          selectedHouseId = v;
+                          if (v == null) houseLinkRole = 'member';
+                        }),
                       ),
+                      if (selectedHouseId != null) ...[
+                        const SizedBox(height: 8),
+                        InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: 'Rôle dans la maison',
+                            labelStyle: TextStyle(
+                              color: context.smartColors.textSecondary,
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: canPickOwner ? houseLinkRole : 'member',
+                              dropdownColor: context.smartColors.card,
+                              style: TextStyle(
+                                color: context.smartColors.textPrimary,
+                              ),
+                              items: [
+                                const DropdownMenuItem(
+                                  value: 'member',
+                                  child: Text('Invité'),
+                                ),
+                                if (canPickOwner)
+                                  const DropdownMenuItem(
+                                    value: 'owner',
+                                    child: Text('Propriétaire'),
+                                  ),
+                              ],
+                              onChanged: canPickOwner
+                                  ? (v) {
+                                      if (v == null) return;
+                                      setModalState(() => houseLinkRole = v);
+                                    }
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       FilledButton(
                         onPressed: () => Navigator.pop(ctx, true),
@@ -113,12 +161,23 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       );
       if (ok != true || !mounted) return;
 
+      String? memberHouseId;
+      String? ownerOfHouseId;
+      if (selectedHouseId != null) {
+        if (houseLinkRole == 'owner') {
+          ownerOfHouseId = selectedHouseId;
+        } else {
+          memberHouseId = selectedHouseId;
+        }
+      }
+
       await FirestoreAuthRepository.instance.createUserByAdmin(
         name: nameCtrl.text,
         email: emailCtrl.text,
         phone: phoneCtrl.text,
         plainPassword: passCtrl.text,
-        houseOwnerUserId: selectedHouseId,
+        memberHouseId: memberHouseId,
+        ownerOfHouseId: ownerOfHouseId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -311,13 +370,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                   ),
                                   subtitle: Text(
                                     '${u.email}\n${UserRole.label(u.role)}'
-                                    '${u.houseOwnerUserId != null ? ' · maison: ${u.houseOwnerUserId}' : ''}',
+                                    '${u.memberHouseId != null ? ' · invité: ${u.memberHouseId}' : u.houseOwnerUserId != null ? ' · maison: ${u.houseOwnerUserId}' : u.ownedHouseId != null ? ' · propriétaire: ${u.ownedHouseId}' : ''}',
                                     style: TextStyle(
                                       color: context.smartColors.textSecondary,
                                       fontSize: 12,
                                     ),
                                   ),
-                                  isThreeLine: u.houseOwnerUserId != null,
+                                  isThreeLine: u.memberHouseId != null ||
+                                      u.houseOwnerUserId != null ||
+                                      u.ownedHouseId != null,
                                   trailing: Icon(
                                     Icons.chevron_right_rounded,
                                     color: context.smartColors.textSecondary,

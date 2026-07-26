@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:smart_home/models/sensor_threshold_config.dart';
 
-/// Préférences utilisateur (profil) — thème, langue, police, date/heure.
+/// Préférences utilisateur (profil) — thème, langue, police, date/heure, alertes.
 class UserAppPreferences {
   const UserAppPreferences({
     required this.themeMode,
@@ -10,6 +11,9 @@ class UserAppPreferences {
     required this.showDateTime,
     required this.use24HourTime,
     required this.datePattern,
+    this.notificationsEnabled = true,
+    this.pirAlertsEnabled = true,
+    this.sensorThresholds = const {},
   });
 
   final ThemeMode themeMode;
@@ -19,6 +23,9 @@ class UserAppPreferences {
   final bool showDateTime;
   final bool use24HourTime;
   final String datePattern;
+  final bool notificationsEnabled;
+  final bool pirAlertsEnabled;
+  final Map<String, SensorThresholdConfig> sensorThresholds;
 
   static const double defaultFontScale = 1.0;
   static const double minFontScale = 0.9;
@@ -32,7 +39,15 @@ class UserAppPreferences {
     showDateTime: false,
     use24HourTime: true,
     datePattern: 'dd/MM/yyyy',
+    notificationsEnabled: true,
+    pirAlertsEnabled: true,
+    sensorThresholds: SensorThresholdConfig.defaultsByType,
   );
+
+  SensorThresholdConfig sensorThreshold(String type) {
+    final key = type.trim().toUpperCase();
+    return sensorThresholds[key] ?? SensorThresholdConfig.forType(key);
+  }
 
   static const supportedFontScales = <String, String>{
     'small': 'Petite',
@@ -58,6 +73,9 @@ class UserAppPreferences {
     bool? showDateTime,
     bool? use24HourTime,
     String? datePattern,
+    bool? notificationsEnabled,
+    bool? pirAlertsEnabled,
+    Map<String, SensorThresholdConfig>? sensorThresholds,
   }) {
     return UserAppPreferences(
       themeMode: themeMode ?? this.themeMode,
@@ -67,6 +85,9 @@ class UserAppPreferences {
       showDateTime: showDateTime ?? this.showDateTime,
       use24HourTime: use24HourTime ?? this.use24HourTime,
       datePattern: datePattern ?? this.datePattern,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      pirAlertsEnabled: pirAlertsEnabled ?? this.pirAlertsEnabled,
+      sensorThresholds: sensorThresholds ?? this.sensorThresholds,
     );
   }
 
@@ -119,7 +140,44 @@ class UserAppPreferences {
         'showDateTime': showDateTime,
         'use24HourTime': use24HourTime,
         'datePattern': datePattern,
+        'notifications': notificationsEnabled,
+        'pirAlertsEnabled': pirAlertsEnabled,
+        'sensorAlerts': {
+          for (final e in sensorThresholds.entries) e.key: e.value.toFirestore(),
+        },
+        'alertThreshold': sensorThreshold('DHT').threshold,
       };
+
+  static Map<String, SensorThresholdConfig> _parseSensorAlerts(
+    Map<String, dynamic>? data,
+  ) {
+    final raw = data?['sensorAlerts'];
+    if (raw is! Map) {
+      final legacy = data?['alertThreshold'];
+      final t = legacy is num ? legacy.toDouble() : 35.0;
+      return {
+        'DHT': SensorThresholdConfig(
+          enabled: true,
+          alertAbove: true,
+          threshold: t,
+        ),
+        ...SensorThresholdConfig.defaultsByType,
+      };
+    }
+    final out = <String, SensorThresholdConfig>{};
+    for (final entry in raw.entries) {
+      if (entry.key is! String) continue;
+      final map = entry.value;
+      if (map is Map<String, dynamic>) {
+        out[entry.key.toUpperCase()] =
+            SensorThresholdConfig.fromFirestore(map);
+      }
+    }
+    for (final entry in SensorThresholdConfig.defaultsByType.entries) {
+      out.putIfAbsent(entry.key, () => entry.value);
+    }
+    return out;
+  }
 
   factory UserAppPreferences.fromFirestore(Map<String, dynamic>? data) {
     if (data == null) return defaults;
@@ -137,6 +195,11 @@ class UserAppPreferences {
       datePattern: (data['datePattern'] as String?)?.trim().isNotEmpty == true
           ? (data['datePattern'] as String).trim()
           : defaults.datePattern,
+      notificationsEnabled:
+          data['notifications'] as bool? ?? defaults.notificationsEnabled,
+      pirAlertsEnabled:
+          data['pirAlertsEnabled'] as bool? ?? defaults.pirAlertsEnabled,
+      sensorThresholds: _parseSensorAlerts(data),
     );
   }
 

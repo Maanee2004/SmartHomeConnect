@@ -18,6 +18,7 @@ import 'package:smart_home/widgets/device_grid_skeleton.dart';
 import 'package:smart_home/widgets/load_error_view.dart';
 import 'package:smart_home/widgets/pin_picker_dialog.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 
 /// Accueil : appareils filtrés par pièce (défaut **Salon**), sélection via menu ⋮.
 class DashboardScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class DashboardScreen extends StatefulWidget {
     this.showHeader = true,
     this.houseTitlePrefix,
     this.embedded = false,
+    this.focusRoomId,
   });
 
   final Widget? bottomNavigationBar;
@@ -41,6 +43,9 @@ class DashboardScreen extends StatefulWidget {
   final String? houseTitlePrefix;
   final bool embedded;
 
+  /// Onglet Pièces → ouvre l’accueil filtré sur cette pièce.
+  final String? focusRoomId;
+
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
@@ -50,6 +55,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool get _canAddDevices =>
       widget.readOnly != true && AuthService.instance.canAddDevices;
+
+  bool get _canAssignDevicesToRooms =>
+      widget.readOnly != true &&
+      AuthService.instance.canAssignDevicesToRooms;
 
   bool get _canFullManageDevices =>
       widget.readOnly != true && AuthService.instance.canManageDevices;
@@ -63,6 +72,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Pièce explicitement choisie dans le menu ; `null` = règle par défaut (Salon ou 1ʳᵉ pièce).
   String? _pickedRoomId;
 
+  @override
+  void didUpdateWidget(covariant DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _applyExternalRoomFocus(widget.focusRoomId);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _applyExternalRoomFocus(widget.focusRoomId);
+  }
+
+  void _applyExternalRoomFocus(String? roomId) {
+    final id = roomId?.trim();
+    if (id == null || id.isEmpty) return;
+    if (_pickedRoomId == id && !_allHouse) return;
+    _pickedRoomId = id;
+    _allHouse = false;
+  }
+
   String _effectiveRoomId(List<HouseRoom> rooms) {
     if (rooms.isEmpty) return '';
     if (_pickedRoomId != null && rooms.any((r) => r.id == _pickedRoomId)) {
@@ -74,22 +103,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return rooms.first.id;
   }
 
-  String _appBarTitle(List<HouseRoom> rooms, bool firebaseReady) {
-    if (!firebaseReady) return 'Smart Home';
-    if (rooms.isEmpty) return 'Ma maison';
-    if (_allHouse) return 'Toute la maison';
+  String _appBarTitle(BuildContext context, List<HouseRoom> rooms, bool firebaseReady) {
+    final l = context.l10n;
+    if (!firebaseReady) return l.appTitle;
+    if (rooms.isEmpty) return l.myHouse;
+    if (_allHouse) return l.wholeHouse;
     final id = _effectiveRoomId(rooms);
     for (final r in rooms) {
       if (r.id == id) return r.name;
     }
-    return 'Salon';
+    return l.defaultRoomSalon;
   }
 
   List<Device> _filteredDevices(List<Device> all, List<HouseRoom> rooms) {
     if (_allHouse) return all;
     final id = _effectiveRoomId(rooms);
     if (id.isEmpty) return [];
-    return all.where((d) => d.roomId == id).toList();
+    HouseRoom? room;
+    for (final r in rooms) {
+      if (r.id == id) {
+        room = r;
+        break;
+      }
+    }
+    if (room == null) return [];
+    return all.where((d) => HouseRoom.deviceBelongsToRoom(d, room!)).toList();
   }
 
   Future<void> _onDashboardPullRefresh() async {
@@ -109,6 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (ctx) {
+        final l = ctx.l10n;
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -129,7 +168,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Afficher les appareils',
+                    l.showDevices,
                     style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                           color: context.smartColors.textPrimary,
                           fontWeight: FontWeight.w600,
@@ -150,9 +189,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         leading:
                             Icon(Icons.home_work_outlined, color: accentColor),
                         title: Text(
-                          'Toute la maison',
-                          style: TextStyle(
-                              color: context.smartColors.textPrimary),
+                          l.wholeHouse,
+                          style:
+                              TextStyle(color: context.smartColors.textPrimary),
                         ),
                         onTap: () {
                           Navigator.pop(ctx);
@@ -171,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          'Aucune pièce. Ajoute la première ci-dessous.',
+                          l.noRoomsAddFirst,
                           style: TextStyle(
                             color: context.smartColors.textSecondary,
                           ),
@@ -206,7 +245,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   color: context.smartColors.textSecondary,
                                   size: 22,
                                 ),
-                                tooltip: 'Renommer la pièce',
+                                tooltip: l.renameRoomTooltip,
                                 onPressed: () async {
                                   await _promptRenameRoom(
                                     context,
@@ -222,7 +261,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   color: errorColor.withValues(alpha: 0.9),
                                   size: 22,
                                 ),
-                                tooltip: 'Supprimer la pièce',
+                                tooltip: l.deleteRoomTooltip,
                                 onPressed: () async {
                                   await _confirmDeleteRoom(
                                     sheetContext: ctx,
@@ -248,7 +287,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         leading:
                             Icon(Icons.add_circle_outline, color: accentColor),
                         title: Text(
-                          'Ajouter une pièce',
+                          l.addRoom,
                           style:
                               TextStyle(color: context.smartColors.textPrimary),
                         ),
@@ -270,6 +309,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _promptAddRoom(BuildContext context) async {
+    final l = context.l10n;
     final controller = TextEditingController();
     String? name;
     try {
@@ -277,7 +317,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(
-            'Nouvelle pièce',
+            l.newRoomTitle,
             style: TextStyle(color: context.smartColors.textPrimary),
           ),
           content: TextField(
@@ -285,21 +325,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             autofocus: true,
             style: TextStyle(color: context.smartColors.textPrimary),
             decoration: InputDecoration(
-              hintText: 'Nom de la pièce',
+              hintText: l.roomNameHint,
               hintStyle: TextStyle(color: context.smartColors.textSecondary),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Annuler'),
+              child: Text(l.cancel),
             ),
             FilledButton(
               onPressed: () {
                 final t = controller.text.trim();
                 Navigator.pop(ctx, t.isEmpty ? null : t);
               },
-              child: Text('Ajouter'),
+              child: Text(l.add),
             ),
           ],
         ),
@@ -313,7 +353,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (context.mounted) {
         final suffix = id.isEmpty ? '' : ' (id: $id)';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Pièce « $name » ajoutée.$suffix')),
+          SnackBar(content: Text(l.roomAdded(name, suffix))),
         );
       }
     } catch (e) {
@@ -332,6 +372,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required HouseRoom room,
     BuildContext? sheetContext,
   }) async {
+    final l = context.l10n;
     final controller = TextEditingController(text: room.name);
     String? name;
     try {
@@ -339,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(
-            'Renommer la pièce',
+            l.renameRoomTitle,
             style: TextStyle(color: context.smartColors.textPrimary),
           ),
           content: TextField(
@@ -347,21 +388,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             autofocus: true,
             style: TextStyle(color: context.smartColors.textPrimary),
             decoration: InputDecoration(
-              hintText: 'Nouveau nom',
+              hintText: l.newNameHint,
               hintStyle: TextStyle(color: context.smartColors.textSecondary),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Annuler'),
+              child: Text(l.cancel),
             ),
             FilledButton(
               onPressed: () {
                 final t = controller.text.trim();
                 Navigator.pop(ctx, t.isEmpty ? null : t);
               },
-              child: Text('Enregistrer'),
+              child: Text(l.save),
             ),
           ],
         ),
@@ -377,7 +418,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.pop(sheetContext!);
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pièce renommée en « $name ».')),
+        SnackBar(content: Text(l.roomRenamed(name))),
       );
     } catch (e) {
       if (context.mounted) {
@@ -392,26 +433,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _confirmDeleteDevice(BuildContext context, Device device) async {
     if (!Firebase.apps.isNotEmpty) return;
+    final l = context.l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(
-          'Supprimer « ${device.name} » ?',
+          l.deleteDeviceTitle(device.name),
           style: TextStyle(color: context.smartColors.textPrimary),
         ),
         content: Text(
-          'L’appareil sera retiré de Firestore.',
+          l.deleteDeviceBody,
           style: TextStyle(color: context.smartColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuler'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Supprimer'),
+            child: Text(l.delete),
           ),
         ],
       ),
@@ -425,13 +467,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('« ${device.name} » supprimé.')),
+          SnackBar(content: Text(l.deviceDeleted(device.name))),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Échec: $e')),
+          SnackBar(content: Text(l.failureMessage(e))),
         );
       }
     }
@@ -443,26 +485,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required HouseRoom room,
   }) async {
     if (!Firebase.apps.isNotEmpty) return;
+    final l = messengerContext.l10n;
     final ok = await showDialog<bool>(
       context: sheetContext,
       builder: (ctx) => AlertDialog(
         title: Text(
-          'Supprimer « ${room.name} » ?',
+          l.deleteRoomTitle(room.name),
           style: TextStyle(color: context.smartColors.textPrimary),
         ),
         content: Text(
-          'La pièce et tous ses appareils seront retirés de Firestore.',
+          l.deleteRoomBody,
           style: TextStyle(color: context.smartColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuler'),
+            child: Text(l.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Supprimer'),
+            child: Text(l.delete),
           ),
         ],
       ),
@@ -478,12 +521,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (_pickedRoomId == room.id) _pickedRoomId = null;
       });
       ScaffoldMessenger.of(messengerContext).showSnackBar(
-        SnackBar(content: Text('Pièce « ${room.name} » supprimée.')),
+        SnackBar(content: Text(l.roomDeleted(room.name))),
       );
     } catch (e) {
       if (messengerContext.mounted) {
         ScaffoldMessenger.of(messengerContext).showSnackBar(
-          SnackBar(content: Text('Échec: $e')),
+          SnackBar(content: Text(l.failureMessage(e))),
         );
       }
     }
@@ -518,7 +561,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Placer dans quelle pièce ?',
+                  ctx.l10n.pickRoomForDevice,
                   style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                         color: context.smartColors.textPrimary,
                         fontWeight: FontWeight.w600,
@@ -573,13 +616,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String deviceLabel,
   }) async {
     final needsPin = AppareilSpec.requiresPin(type);
+    final l = context.l10n;
     return showPinPickerDialog(
       context,
       repo: _repo,
       required: needsPin,
-      title: needsPin ? 'Broche GPIO (obligatoire)' : 'Broche GPIO (optionnel)',
+      deviceType: type,
+      title: needsPin ? l.gpioPinRequired : l.gpioPinOptional,
       subtitle:
-          '$deviceLabel — broches ${AppareilSpec.minPin}–${AppareilSpec.maxPin}',
+          '$deviceLabel — ${l.gpioPinRange(AppareilSpec.minPin, AppareilSpec.maxPin)}',
     );
   }
 
@@ -588,24 +633,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Device device,
     List<HouseRoom> rooms,
   ) async {
+    final l = context.l10n;
     if (rooms.isEmpty) return;
     final roomId = await _pickRoomForDevice(context, rooms);
     if (roomId == null || !context.mounted) return;
-    if (roomId == device.roomId) {
+
+    final target = rooms.firstWhere(
+      (r) => r.id == roomId,
+      orElse: () => HouseRoom(id: roomId, name: roomId),
+    );
+    if (HouseRoom.deviceBelongsToRoom(device, target)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('L’appareil est déjà dans cette pièce.')),
+        SnackBar(content: Text(l.deviceAlreadyInRoom)),
       );
       return;
     }
+
     try {
       await _repo.updateDevicePiece(device.id, roomId);
       if (!context.mounted) return;
-      final label = rooms
-          .firstWhere((r) => r.id == roomId,
-              orElse: () => HouseRoom(id: roomId, name: roomId))
-          .name;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('« ${device.name} » déplacé vers $label.')),
+        SnackBar(content: Text(l.deviceMoved(device.name, target.name))),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -616,12 +664,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _editDevicePin(BuildContext context, Device device) async {
+    final l = context.l10n;
     final pin = await showPinPickerDialog(
       context,
       repo: _repo,
       required: device.expectsPin,
       currentPin: device.pin,
-      title: 'Modifier la broche',
+      deviceType: device.type,
+      title: l.editPinTitle,
       subtitle: device.name,
     );
     if (pin == null || !context.mounted) return;
@@ -629,7 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _repo.updateDevicePin(device.id, pin);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Broche $pin assignée à « ${device.name} ».')),
+        SnackBar(content: Text(l.pinAssigned(pin, device.name))),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -663,18 +713,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (roomId == null || !context.mounted) return;
 
     String? rfidId;
+    final l = context.l10n;
     if (readers.isNotEmpty) {
       rfidId = await showDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
           title: Text(
-            'Lecteur RFID lié (optionnel)',
+            l.rfidReaderOptional,
             style: TextStyle(color: context.smartColors.textPrimary),
           ),
           children: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, ''),
-              child: const Text('Aucun lecteur'),
+              child: Text(l.noReader),
             ),
             for (final r in readers)
               SimpleDialogOption(
@@ -691,7 +742,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context,
       repo: _repo,
       required: true,
-      title: 'Broche du servomoteur',
+      deviceType: 'SERVO',
+      title: l.servoPinTitle,
       subtitle: rfidId != null && rfidId.isNotEmpty
           ? 'rfid_cible → $rfidId'
           : 'Sans lecteur RFID lié',
@@ -726,6 +778,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BuildContext context,
     List<HouseRoom> rooms,
   ) async {
+    final l = context.l10n;
     final roomId = await _resolveTargetRoomId(context, rooms);
     if (roomId == null || !context.mounted) return;
 
@@ -733,8 +786,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context,
       repo: _repo,
       required: true,
-      title: 'Broche du capteur DHT',
-      subtitle: 'Un doc : température et humidité dans valeur (ex. 24.5/60)',
+      deviceType: 'DHT',
+      title: l.dhtPinTitle,
+      subtitle: l.dhtPinSubtitle,
     );
     if (pin == null || !context.mounted) return;
 
@@ -743,9 +797,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Capteur DHT ajouté (valeur temp./hum., broche $pin).',
-          ),
+          content: Text(l.dhtAdded(pin)),
         ),
       );
     } catch (e) {
@@ -809,6 +861,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (ctx) {
+        final sheetL = ctx.l10n;
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -828,7 +881,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Ajouter un appareil',
+                    sheetL.addDeviceSheetTitle,
                     style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
                           color: context.smartColors.textPrimary,
                           fontWeight: FontWeight.w600,
@@ -842,7 +895,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Tu affiches « Toute la maison » : on te demandera la pièce pour chaque ajout.',
+                      sheetL.allHouseAddHint,
                       style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                             color: context.smartColors.textSecondary,
                           ),
@@ -859,7 +912,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Text(
-                        'Types enregistrés en MAJUSCULES (Arduino CONFIG).',
+                        sheetL.typesUppercaseHint,
                         style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                               color: context.smartColors.textSecondary,
                             ),
@@ -869,7 +922,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                       child: Text(
-                        'Capteurs',
+                        sheetL.sensorsSection,
                         style: TextStyle(
                           color: context.smartColors.textSecondary,
                           fontWeight: FontWeight.w600,
@@ -959,7 +1012,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                       child: Text(
-                        'Actionneurs',
+                        sheetL.actuatorsSection,
                         style: TextStyle(
                           color: context.smartColors.textSecondary,
                           fontWeight: FontWeight.w600,
@@ -1007,46 +1060,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       },
                     ),
                     ListTile(
-                      leading: Icon(Icons.precision_manufacturing_outlined,
-                          color: accentColor),
-                      title: Text(
-                        'Moteur DC',
-                        style:
-                            TextStyle(color: context.smartColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        'type MOTEUR — unit booleen',
-                        style: TextStyle(
-                            color: context.smartColors.textSecondary,
-                            fontSize: 12),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await _addQuickDevice(context, rooms,
-                            name: 'Moteur', type: 'MOTEUR');
-                      },
-                    ),
-                    ListTile(
-                      leading:
-                          Icon(Icons.highlight_rounded, color: accentColor),
-                      title: Text(
-                        'LED',
-                        style:
-                            TextStyle(color: context.smartColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        'type: LED — broche directe',
-                        style: TextStyle(
-                            color: context.smartColors.textSecondary,
-                            fontSize: 12),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await _addQuickDevice(context, rooms,
-                            name: 'LED', type: 'LED');
-                      },
-                    ),
-                    ListTile(
                       leading: Icon(Icons.grid_on_rounded, color: accentColor),
                       title: Text(
                         'Matrice LED MAX7219',
@@ -1088,12 +1101,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ListTile(
                       leading: Icon(Icons.tune_rounded, color: accentColor),
                       title: Text(
-                        'Ajouter un appareil personnalisé…',
+                        sheetL.customDevice,
                         style:
                             TextStyle(color: context.smartColors.textPrimary),
                       ),
                       subtitle: Text(
-                        'Nom, type et pièce au choix',
+                        sheetL.customDeviceSubtitle,
                         style: TextStyle(
                             color: context.smartColors.textSecondary,
                             fontSize: 12),
@@ -1118,6 +1131,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BuildContext context,
     List<HouseRoom> rooms,
   ) async {
+    final l = context.l10n;
     final nameCtrl = TextEditingController();
     var type = 'RELAIS';
     var roomId = _effectiveRoomId(rooms);
@@ -1130,7 +1144,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (ctx, setSt) {
             return AlertDialog(
               title: Text(
-                'Appareil personnalisé',
+                l.customDeviceTitle,
                 style: TextStyle(color: context.smartColors.textPrimary),
               ),
               content: SingleChildScrollView(
@@ -1143,16 +1157,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       autofocus: true,
                       style: TextStyle(color: context.smartColors.textPrimary),
                       decoration: InputDecoration(
-                        labelText: 'Nom',
+                        labelText: l.nameLabel,
                         labelStyle:
                             TextStyle(color: context.smartColors.textSecondary),
-                        hintText: 'ex. Lampe bureau',
+                        hintText: l.nameExampleHint,
                         hintStyle:
                             TextStyle(color: context.smartColors.textSecondary),
                       ),
                     ),
                     Text(
-                      'Type',
+                      l.typeLabel,
                       style: TextStyle(
                           color: context.smartColors.textSecondary,
                           fontSize: 12),
@@ -1183,7 +1197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Pièce',
+                      l.roomLabel,
                       style: TextStyle(
                           color: context.smartColors.textSecondary,
                           fontSize: 12),
@@ -1214,11 +1228,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: Text('Annuler'),
+                  child: Text(l.cancel),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text('Ajouter'),
+                  child: Text(l.add),
                 ),
               ],
             );
@@ -1229,7 +1243,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final name = nameCtrl.text.trim();
       if (name.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Indique un nom.')),
+          SnackBar(content: Text(l.enterName)),
         );
         return;
       }
@@ -1271,6 +1285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final firebaseReady = Firebase.apps.isNotEmpty;
+    final l = context.l10n;
 
     final body = AdaptiveContent(
       padding: context.responsive.pagePadding,
@@ -1282,7 +1297,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 10),
           ],
           Text(
-            widget.houseTitlePrefix ?? 'Ma maison',
+            widget.houseTitlePrefix ?? l.myHouse,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: context.smartColors.textPrimary,
                   fontWeight: FontWeight.w600,
@@ -1297,10 +1312,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             builder: (context, onlineSnap) {
               final houseOnline = onlineSnap.data == true;
               final label = !firebaseReady
-                  ? 'Non connecté'
+                  ? l.notConnected
                   : houseOnline
-                      ? 'Maison en ligne'
-                      : 'Maison hors ligne';
+                      ? l.houseOnline
+                      : l.houseOffline;
               final icon = !firebaseReady
                   ? Icons.wifi_off_rounded
                   : houseOnline
@@ -1331,7 +1346,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 8),
           if (AuthService.instance.isMember)
             Text(
-              'Mode membre : allume/éteins les appareils. L’ajout et la configuration sont réservés au propriétaire.',
+              l.memberModeHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: context.smartColors.textSecondary,
                   ),
@@ -1340,7 +1355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           else if (_canAddDevices)
             Text(
-              'Bouton + pour ajouter · icône déplacer sur une carte · Guide complet dans Paramètres → Guides utilisateur.',
+              l.ownerHintAddDevices,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: context.smartColors.textSecondary,
                   ),
@@ -1349,7 +1364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           else
             Text(
-              'Connecte-toi pour piloter ta maison.',
+              l.connectToControl,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: context.smartColors.textSecondary,
                   ),
@@ -1379,7 +1394,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Firebase n’est pas initialisé.',
+                                  l.firebaseNotInitialized,
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context)
                                       .textTheme
@@ -1390,7 +1405,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Configure le projet (flutterfire configure) puis relance l’app.',
+                                  l.firebaseConfigureHint,
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context)
                                       .textTheme
@@ -1477,7 +1492,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ),
                                           const SizedBox(height: 16),
                                           Text(
-                                            'Aucune pièce pour l’instant.',
+                                            l.noRoomsYet,
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .titleMedium
@@ -1491,9 +1506,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           const SizedBox(height: 8),
                                           Text(
                                             !_canAddRoom
-                                                ? 'Connecte-toi pour ajouter des pièces.'
-                                                : 'Ajoute une pièce depuis le menu ⋮'
-                                                    '${_canFullManageDevices ? ' ou charge les données de démo.' : '.'}',
+                                                ? l.connectToAddRooms
+                                                : '${l.addRoomFromMenu}'
+                                                    '${_canFullManageDevices ? l.orLoadDemo : '.'}',
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .bodyMedium
@@ -1515,9 +1530,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                           ScaffoldMessenger.of(
                                                                   context)
                                                               .showSnackBar(
-                                                            const SnackBar(
+                                                            SnackBar(
                                                               content: Text(
-                                                                'Données de démo ajoutées.',
+                                                                context.l10n
+                                                                    .demoDataAdded,
                                                               ),
                                                             ),
                                                           );
@@ -1531,14 +1547,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                             .showSnackBar(
                                                           SnackBar(
                                                             content: Text(
-                                                                'Échec: $e'),
+                                                                context.l10n
+                                                                    .failureMessage(
+                                                                        e)),
                                                           ),
                                                         );
                                                       }
                                                     }
                                                   : null,
                                               child: Text(
-                                                'Créer des données de démo (Firestore)',
+                                                l.createDemoData,
                                               ),
                                             ),
                                         ],
@@ -1603,8 +1621,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           const SizedBox(height: 16),
                                           Text(
                                             _allHouse
-                                                ? 'Aucun appareil dans la maison.'
-                                                : 'Aucun appareil dans cette pièce.',
+                                                ? l.noDevicesInHouse
+                                                : l.noDevicesInRoom,
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .titleMedium
@@ -1618,8 +1636,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           const SizedBox(height: 8),
                                           Text(
                                             _canAddDevices
-                                                ? 'Utilise le bouton + pour en ajouter un.'
-                                                : 'Aucun appareil dans cette pièce.',
+                                                ? l.usePlusToAdd
+                                                : l.noDevicesInRoom,
                                             style: Theme.of(context)
                                                 .textTheme
                                                 .bodySmall
@@ -1649,8 +1667,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       filtered,
                                     ),
                                     scopeLabel: _allHouse
-                                        ? 'Toute la maison'
-                                        : _appBarTitle(rooms, firebaseReady),
+                                        ? l.wholeHouse
+                                        : _appBarTitle(context, rooms, firebaseReady),
                                   ),
                                 ),
                                 SliverPadding(
@@ -1693,12 +1711,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                   )
                                               : null,
                                           onPinEdit: firebaseReady &&
-                                                  _canFullManageDevices &&
-                                                  (d.expectsPin || d.pin != null)
+                                                  _canAddDevices &&
+                                                  (d.expectsPin ||
+                                                      d.pin != null)
                                               ? () => _editDevicePin(context, d)
                                               : null,
                                           onMoveRoom: firebaseReady &&
-                                                  _canAddDevices &&
+                                                  _canAssignDevicesToRooms &&
                                                   rooms.isNotEmpty
                                               ? () => _moveDeviceToRoom(
                                                     context,
@@ -1735,7 +1754,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, snap) {
             final rooms = snap.data ?? const <HouseRoom>[];
             return IconButton(
-              tooltip: 'Ajouter un appareil',
+              tooltip: l.addDevice,
               icon: Icon(Icons.add_rounded,
                   color: context.smartColors.textSecondary),
               onPressed: !firebaseReady || rooms.isEmpty
@@ -1752,18 +1771,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (context, snap) {
           final rooms = snap.data ?? const <HouseRoom>[];
           return IconButton(
-            tooltip: 'Choisir la pièce',
+            tooltip: l.pickRoomTooltip,
             icon: Icon(Icons.more_vert_rounded,
                 color: context.smartColors.textSecondary),
-            onPressed: !firebaseReady
-                ? null
-                : () => _showRoomPicker(context, rooms),
+            onPressed:
+                !firebaseReady ? null : () => _showRoomPicker(context, rooms),
           );
         },
       ),
       if (!widget.embedded)
         IconButton(
-          tooltip: 'Se déconnecter',
+          tooltip: l.logoutTooltip,
           icon: Icon(Icons.logout_rounded,
               color: context.smartColors.textSecondary),
           onPressed: () async {
@@ -1794,7 +1812,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     builder: (context, snap) {
                       final rooms = snap.data ?? const <HouseRoom>[];
                       return Text(
-                        _appBarTitle(rooms, firebaseReady),
+                        _appBarTitle(context, rooms, firebaseReady),
                         style: TextStyle(
                           color: context.smartColors.textPrimary,
                           fontWeight: FontWeight.w600,
@@ -1826,7 +1844,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, snap) {
             final rooms = snap.data ?? const <HouseRoom>[];
             return Text(
-              _appBarTitle(rooms, firebaseReady),
+              _appBarTitle(context, rooms, firebaseReady),
               style: TextStyle(
                 color: context.smartColors.textPrimary,
                 fontWeight: FontWeight.w600,
@@ -1849,16 +1867,17 @@ class _DashboardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.l10n;
     return StreamBuilder<String?>(
       stream: AuthService.instance.userNameStream(),
       builder: (context, snap) {
         final raw = snap.data?.trim();
-        final name = (raw == null || raw.isEmpty) ? 'Utilisateur' : raw;
+        final name = (raw == null || raw.isEmpty) ? l.userDefault : raw;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Bonjour',
+              l.hello,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: context.smartColors.textSecondary,
                     fontWeight: FontWeight.w500,

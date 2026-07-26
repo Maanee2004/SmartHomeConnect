@@ -13,31 +13,9 @@ class FirestorePaths {
   FirestoreFieldNames get fields =>
       FirestoreFieldNames.of(FirestoreCollectionNaming.canonical);
 
+  /// Schéma canonique fixe — pas de probe réseau au démarrage (gain ~10–25 s sur Web).
   static Future<FirestorePaths> detectWritable(FirebaseFirestore db) async {
-    const probeUserId = '_app_write_probe';
-    await FirestoreHousePaths.ensureInitialized(db, probeUserId);
-    final ref = FirestoreHousePaths.appareils(db, probeUserId).doc('_probe');
-    try {
-      await ref
-          .set({
-            FirestoreSchema.fieldUserId: probeUserId,
-            'piece': '_probe',
-            'valeur': '0',
-            'categorie': 'capteur',
-          })
-          .timeout(const Duration(seconds: 12));
-      await ref.delete().timeout(const Duration(seconds: 12));
-      return instance;
-    } on TimeoutException {
-      return fallbackWithoutFirebase();
-    } on FirebaseException catch (e) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: e.code,
-        message:
-            'Collection /${FirestoreSchema.maisonsCollection}/$probeUserId/${FirestoreSchema.houseAppareilsSubcollection} inaccessible : ${e.message}',
-      );
-    }
+    return instance;
   }
 
   static FirestorePaths fallbackWithoutFirebase() => instance;

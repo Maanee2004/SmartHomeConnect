@@ -272,8 +272,7 @@ class Device {
 
   /// Fusionne DHT_TEMP + DHT_HUM (même capteur : id dht_temp_x + dht_hum_x).
   static Device? mergeDhtPair(Device temp, Device hum) {
-    if (temp.normalizedType != 'DHT_TEMP' ||
-        hum.normalizedType != 'DHT_HUM') {
+    if (temp.normalizedType != 'DHT_TEMP' || hum.normalizedType != 'DHT_HUM') {
       return null;
     }
 
@@ -291,9 +290,7 @@ class Device {
 
     return Device(
       id: temp.id,
-      name: pieceLabel.isEmpty
-          ? 'Capteur DHT'
-          : 'Capteur DHT — $pieceLabel',
+      name: pieceLabel.isEmpty ? 'Capteur DHT' : 'Capteur DHT — $pieceLabel',
       roomId: temp.roomId,
       piece: temp.piece ?? hum.piece,
       type: 'DHT_TEMP',
@@ -344,8 +341,7 @@ class Device {
       final dht = _parseDhtFields(data, id);
       final temp = dht.temp;
       final hum = dht.hum;
-      final rfidLink =
-          (data[AppareilSpec.fieldRfidCible] as String?)?.trim();
+      final rfidLink = (data[AppareilSpec.fieldRfidCible] as String?)?.trim();
 
       return Device(
         id: id,

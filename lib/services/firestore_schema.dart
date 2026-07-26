@@ -36,9 +36,29 @@ class FirestoreSchema {
 
   static const fieldUserId = 'userId';
 
+  /// ID document `maisons/{houseId}` (peut différer du propriétaire).
+  static const fieldHouseId = 'houseId';
+
+  /// Nom affiché de la maison (admin).
+  static const fieldHouseName = 'name';
+
+  /// Propriétaire rattaché (`users/{ownerUserId}`), null si maison orpheline.
+  static const fieldOwnerUserId = 'ownerUserId';
+
+  /// Membres invités (maisons sans propriétaire ou complément admin).
+  static const fieldMemberUserIds = 'memberUserIds';
+
+  /// Maison gérée par un propriétaire (`users/{userId}.ownedHouseId`).
+  static const fieldOwnedHouseId = 'ownedHouseId';
+
+  /// Maison consultée par un invité (`users/{userId}.memberHouseId`).
+  static const fieldMemberHouseId = 'memberHouseId';
+
+  static const fieldCreatedByAdmin = 'createdByAdmin';
+
   /// Chemin logique : `maisons/usr_jean`.
-  static String houseDocPath(String userId) =>
-      '$maisonsCollection/${userId.trim()}';
+  static String houseDocPath(String houseId) =>
+      '$maisonsCollection/${houseId.trim()}';
 }
 
 enum FirestoreCollectionNaming {

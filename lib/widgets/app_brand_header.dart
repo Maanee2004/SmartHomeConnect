@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/theme/app_branding.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
-/// En-tête centré : logo Wi‑Fi + « SMART HOME CONNECT ».
+/// En-tête : icône en haut, texte en dessous.
 class AppBrandHeader extends StatelessWidget {
   const AppBrandHeader({
     super.key,
@@ -13,11 +14,8 @@ class AppBrandHeader extends StatelessWidget {
     this.logoAsset,
   });
 
-  /// Version réduite pour le dashboard (barre fine sous la status bar).
   final bool compact;
   final bool showTagline;
-
-  /// Surcharge [AppBranding.selectedLogoAsset] pour un écran précis.
   final String? logoAsset;
 
   @override
@@ -25,85 +23,76 @@ class AppBrandHeader extends StatelessWidget {
     final c = context.smartColors;
     final brightness = Theme.of(context).brightness;
     final asset = AppBranding.resolveLogoAsset(
-      brightness,
       override: logoAsset,
+      compact: compact,
+      brightness: brightness,
     );
     final r = ResponsiveLayout.of(context);
-    final logoSize = r.scale(compact ? 36.0 : 52.0);
-    final titleSize = r.fontSize(compact ? 13.0 : 17.0);
-    final useAssetLogo = asset != null;
+
+    final iconSize = r.scale(compact ? 22.0 : 40.0);
+    final titleSize = r.fontSize(compact ? 8.5 : 12.0);
+    final taglineSize = r.fontSize(compact ? 7.5 : 10.0);
+    final gapIconText = compact ? 3.0 : 6.0;
+    final gapTitleTagline = compact ? 1.0 : 2.0;
 
     return Material(
       color: c.scaffoldBackground,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           r.horizontalPadding,
-          compact ? r.scale(6) : r.scale(12),
+          compact ? r.scale(2) : r.scale(6),
           r.horizontalPadding,
-          compact ? r.scale(6) : r.scale(14),
+          compact ? r.scale(2) : r.scale(8),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (useAssetLogo)
-              Image.asset(
-                asset,
-                width: logoSize,
-                height: logoSize,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-                errorBuilder: (_, __, ___) {
-                  if (brightness == Brightness.dark &&
-                      asset == AppBranding.logoOptionBTransparent) {
-                    return Image.asset(
-                      AppBranding.logoOptionB,
-                      width: logoSize,
-                      height: logoSize,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, __, ___) =>
-                          _LogoMark(size: logoSize, colors: c),
-                    );
-                  }
-                  return _LogoMark(size: logoSize, colors: c);
-                },
-              )
-            else
-              _LogoMark(size: logoSize, colors: c),
-            SizedBox(height: compact ? 6 : 10),
+            Image.asset(
+              asset,
+              width: iconSize,
+              height: iconSize,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, __, ___) =>
+                  _LogoMark(size: iconSize, colors: c),
+            ),
+            SizedBox(height: gapIconText),
             Text(
               AppBranding.appName,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: titleSize,
                 fontWeight: FontWeight.w800,
-                letterSpacing: compact ? 0.8 : 1.2,
-                height: 1.1,
-                decoration: TextDecoration.none,
-                decorationThickness: 0,
+                letterSpacing: compact ? 0.4 : 0.8,
+                height: 1.0,
               ),
             ),
-          if (showTagline && !compact) ...[
-            const SizedBox(height: 4),
-            Text(
-              AppBranding.tagline,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: c.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            if (showTagline) ...[
+              SizedBox(height: gapTitleTagline),
+              Text(
+                context.l10n.tagline,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: taglineSize,
+                  fontWeight: FontWeight.w500,
+                  height: 1.0,
+                ),
               ),
-            ),
+            ],
           ],
-        ],
         ),
       ),
     );
   }
 }
 
-/// Logo vectoriel par défaut : maison + symbole Wi‑Fi.
 class _LogoMark extends StatelessWidget {
   const _LogoMark({required this.size, required this.colors});
 
@@ -129,22 +118,11 @@ class _LogoMark extends StatelessWidget {
           color: primaryColor.withValues(alpha: 0.55),
           width: 1.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: primaryColor.withValues(alpha: 0.18),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Icon(
-            Icons.wifi_rounded,
-            size: size * 0.62,
-            color: primaryColor,
-          ),
+          Icon(Icons.wifi_rounded, size: size * 0.62, color: primaryColor),
           Positioned(
             bottom: size * 0.14,
             child: Icon(

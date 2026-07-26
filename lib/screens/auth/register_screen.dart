@@ -1,9 +1,8 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
-import 'package:smart_home/services/auth_service.dart';
+import 'package:smart_home/services/app_startup.dart';
 import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
@@ -63,16 +62,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_warmUpFirebase());
-  }
-
-  Future<void> _warmUpFirebase() async {
-    if (Firebase.apps.isEmpty) return;
-    await FirebaseAnonymousAuth.trySignIn();
+    unawaited(AppStartup.ensureFirebase());
+    unawaited(FirebaseAnonymousAuth.trySignIn(maxAttempts: 1));
   }
 
   Future<bool> _ensureFirebaseReady() async {
-    if (Firebase.apps.isEmpty) {
+    try {
+      await AppStartup.ensureFirebase();
+    } catch (_) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -83,6 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return false;
     }
+    if (!mounted) return false;
     await FirebaseAnonymousAuth.trySignIn();
     return true;
   }
@@ -228,7 +226,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
         phone: _fullPhone,
         plainPassword: password,
       );
-      await AuthService.instance.saveSession(user);
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) {
+          final c = context.smartColors;
+          return AlertDialog(
+            icon: Icon(Icons.check_circle_outline, color: successColor, size: 48),
+            title: Text(
+              'Inscription réussie',
+              style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600),
+            ),
+            content: Text(
+              'Votre compte a été créé pour ${user.email}.\n\n'
+              'Connectez-vous avec votre email et votre mot de passe.',
+              style: TextStyle(color: c.textSecondary, height: 1.4),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  Navigator.pop(context, email);
+                },
+                child: const Text('Aller à la connexion'),
+              ),
+            ],
+          );
+        },
+      );
     } on AuthFailure catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

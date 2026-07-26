@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Smart Home (Web — recommandé)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "web-server",
+      "args": [
+        "--web-hostname",
+        "127.0.0.1",
+        "--web-port",
+        "8080"
+      ]
+    },
+    {
+      "name": "Smart Home (Edge — peut échouer sur Windows)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "edge"
+    },
+    {
+      "name": "Smart Home (Android)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "android"
+    }
+  ]
+}

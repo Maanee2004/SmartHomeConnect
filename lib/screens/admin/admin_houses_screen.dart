@@ -13,6 +13,57 @@ class AdminHousesScreen extends StatelessWidget {
 
   final Widget bottomNavigationBar;
 
+  Future<void> _createHouse(BuildContext context) async {
+    final nameCtrl = TextEditingController();
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Nouvelle maison'),
+          content: TextField(
+            controller: nameCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Nom de la maison',
+              hintText: 'Ex. Résidence A, Villa Nord…',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Créer'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+
+      await AdminRepository.instance.createHouseWithoutOwner(
+        name: nameCtrl.text,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maison créée.')),
+      );
+    } on AdminFailure catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Échec : $e')),
+      );
+    } finally {
+      nameCtrl.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final firebaseReady = Firebase.apps.isNotEmpty;
@@ -30,6 +81,14 @@ class AdminHousesScreen extends StatelessWidget {
         ),
         actions: const [ThemeToggleButton()],
       ),
+      floatingActionButton: firebaseReady
+          ? FloatingActionButton.extended(
+              onPressed: () => _createHouse(context),
+              backgroundColor: accentColor,
+              icon: const Icon(Icons.add_home_work_rounded),
+              label: const Text('Nouvelle maison'),
+            )
+          : null,
       bottomNavigationBar: bottomNavigationBar,
       body: !firebaseReady
           ? Center(
@@ -77,7 +136,7 @@ class AdminHousesScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Chaque utilisateur possède une maison (même vide).',
+                            'Créez une maison sans utilisateur, puis assignez un propriétaire ou des invités.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: context.smartColors.textSecondary,
@@ -90,7 +149,7 @@ class AdminHousesScreen extends StatelessWidget {
                 }
 
                 return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                   itemCount: houses.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
@@ -103,19 +162,21 @@ class AdminHousesScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                         ),
                         leading: Icon(
-                          Icons.home_rounded,
-                          color: accentColor,
+                          h.hasOwner
+                              ? Icons.home_rounded
+                              : Icons.home_outlined,
+                          color: h.hasOwner ? accentColor : Colors.orange,
                         ),
                         title: Text(
-                          h.ownerName,
+                          h.displayTitle,
                           style: TextStyle(
                             color: context.smartColors.textPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         subtitle: Text(
-                          '${h.roomCount} pièce(s) · ${h.deviceCount} appareil(s)'
-                          '${h.memberUserIds.isEmpty ? '' : ' · ${h.memberUserIds.length} membre(s)'}',
+                          '${h.ownerLabel} · ${h.roomCount} pièce(s) · ${h.deviceCount} appareil(s)'
+                          '${h.memberUserIds.isEmpty ? '' : ' · ${h.memberUserIds.length} invité(s)'}',
                           style: TextStyle(
                             color: context.smartColors.textSecondary,
                             fontSize: 12,

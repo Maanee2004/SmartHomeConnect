@@ -31,6 +31,9 @@ abstract class HomeRepository {
 
   Future<List<int>> availablePins();
 
+  /// Broches déjà prises → nom affiché de l’appareil (pour le sélecteur GPIO).
+  Future<Map<int, String>> pinUsageLabels();
+
   Future<List<Device>> listRfidReaders();
 
   /// Met à jour la broche GPIO (2–53), vérifie l’unicité.

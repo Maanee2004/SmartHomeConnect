@@ -17,14 +17,15 @@ class _LedRealtimeScreenState extends State<LedRealtimeScreen> {
   bool _isSending = false;
 
   DocumentReference<Map<String, dynamic>>? get _ledDoc {
-    final userId = AuthService.instance.houseOwnerUserId ??
+    final houseId = AuthService.instance.activeHouseId ??
+        AuthService.instance.houseOwnerUserId ??
         AuthService.instance.currentUserId;
-    if (userId == null || userId.isEmpty || Firebase.apps.isEmpty) {
+    if (houseId == null || houseId.isEmpty || Firebase.apps.isEmpty) {
       return null;
     }
     return FirestoreHousePaths.appareils(
       FirebaseFirestore.instance,
-      userId,
+      houseId,
     ).doc('led_status');
   }
 

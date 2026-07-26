@@ -7,6 +7,7 @@ import 'package:smart_home/models/house_invite.dart';
 import 'package:smart_home/models/user_role.dart';
 import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
+import 'package:smart_home/services/house_resolver.dart';
 import 'package:smart_home/services/firestore_house_paths.dart';
 import 'package:smart_home/services/firestore_schema.dart';
 
@@ -55,8 +56,8 @@ class HouseInvitesRepository {
     throw InviteFailure('Impossible de générer un code unique. Réessayez.');
   }
 
-  Stream<List<HouseInvite>> watchInvites(String ownerUserId) {
-    return _invites(ownerUserId)
+  Stream<List<HouseInvite>> watchInvites(String houseId) {
+    return _invites(houseId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map(
@@ -75,15 +76,15 @@ class HouseInvitesRepository {
         .toList();
   }
 
-  /// Crée le code principal de la maison (à la promotion propriétaire).
-  Future<HouseInvite> ensurePrimaryInvite(String ownerUserId) async {
+  /// Crée le code principal de la maison (`maisons/{houseId}`).
+  Future<HouseInvite> ensurePrimaryInvite(String houseId) async {
     await _ensureAuth();
-    final owner = ownerUserId.trim();
-    if (owner.isEmpty) throw InviteFailure('Propriétaire invalide.');
+    final house = houseId.trim();
+    if (house.isEmpty) throw InviteFailure('Maison invalide.');
 
-    await FirestoreHousePaths.ensureInitialized(_db, owner);
+    await FirestoreHousePaths.ensureInitialized(_db, house);
 
-    final existing = await _invites(owner)
+    final existing = await _invites(house)
         .where('isPrimary', isEqualTo: true)
         .limit(1)
         .get();
@@ -95,7 +96,8 @@ class HouseInvitesRepository {
     }
 
     return createInvite(
-      ownerUserId: owner,
+      houseId: house,
+      ownerUserId: await HouseResolver.ownerUserIdForHouse(house, _db) ?? house,
       label: 'Code maison',
       isPrimary: true,
     );
@@ -103,17 +105,21 @@ class HouseInvitesRepository {
 
   /// Nouveau code invité (propriétaire).
   Future<HouseInvite> createInvite({
+    required String houseId,
     required String ownerUserId,
     String label = 'Invitation',
     bool isPrimary = false,
     Duration? expiresIn,
   }) async {
     await _ensureAuth();
+    final house = houseId.trim();
     final owner = ownerUserId.trim();
-    if (owner.isEmpty) throw InviteFailure('Propriétaire invalide.');
+    if (house.isEmpty || owner.isEmpty) {
+      throw InviteFailure('Maison ou propriétaire invalide.');
+    }
 
     final code = await _allocateUniqueCode();
-    final inviteRef = _invites(owner).doc();
+    final inviteRef = _invites(house).doc();
     final expiresAt =
         expiresIn != null ? DateTime.now().add(expiresIn) : null;
 
@@ -133,6 +139,7 @@ class HouseInvitesRepository {
     batch.set(_codeIndex(code), {
       'code': code,
       'ownerUserId': owner,
+      'houseId': house,
       'inviteId': inviteRef.id,
       'active': true,
       'createdAt': FieldValue.serverTimestamp(),
@@ -142,17 +149,17 @@ class HouseInvitesRepository {
   }
 
   Future<void> revokeInvite({
-    required String ownerUserId,
+    required String houseId,
     required String inviteId,
   }) async {
     await _ensureAuth();
-    final owner = ownerUserId.trim();
+    final house = houseId.trim();
     final id = inviteId.trim();
-    if (owner.isEmpty || id.isEmpty) {
+    if (house.isEmpty || id.isEmpty) {
       throw InviteFailure('Invitation invalide.');
     }
 
-    final inviteRef = _invites(owner).doc(id);
+    final inviteRef = _invites(house).doc(id);
     final snap = await inviteRef.get();
     if (!snap.exists) throw InviteFailure('Invitation introuvable.');
 
@@ -213,10 +220,15 @@ class HouseInvitesRepository {
     }
 
     final ownerUserId = (index['ownerUserId'] as String?)?.trim() ?? '';
+    final houseId = (index['houseId'] as String?)?.trim() ?? '';
     final inviteId = (index['inviteId'] as String?)?.trim() ?? '';
     if (ownerUserId.isEmpty || inviteId.isEmpty) {
       throw InviteFailure('Code invalide.');
     }
+
+    final resolvedHouse = houseId.isNotEmpty
+        ? houseId
+        : await HouseResolver.resolveHouseIdForOwner(ownerUserId, _db);
     if (ownerUserId == member) {
       throw InviteFailure('Vous ne pouvez pas rejoindre votre propre maison.');
     }
@@ -230,7 +242,7 @@ class HouseInvitesRepository {
       throw InviteFailure('Cette maison n’accepte plus de membres.');
     }
 
-    final inviteRef = _invites(ownerUserId).doc(inviteId);
+    final inviteRef = _invites(resolvedHouse).doc(inviteId);
     final inviteSnap = await inviteRef.get();
     if (!inviteSnap.exists) {
       throw InviteFailure('Invitation introuvable.');
@@ -244,8 +256,12 @@ class HouseInvitesRepository {
     }
 
     await FirestoreAuthRepository.instance.assignUserToHouse(
-      ownerUserId: ownerUserId,
+      houseId: resolvedHouse,
       memberUserId: member,
+    );
+    await _db.collection('users').doc(member).set(
+      {'houseOwnerUserId': ownerUserId},
+      SetOptions(merge: true),
     );
 
     await inviteRef.set(
@@ -274,10 +290,14 @@ class HouseInvitesRepository {
 
     final memberSnap = await _db.collection('users').doc(member).get();
     if (!memberSnap.exists) throw InviteFailure('Membre introuvable.');
-    final linked =
-        (memberSnap.data()?['houseOwnerUserId'] as String?)?.trim();
-    if (linked != owner) {
-      throw InviteFailure('Ce membre n’appartient pas à votre maison.');
+    final memberUser = AppUser.fromFirestore(member, memberSnap.data()!);
+    final linkedOwner = memberUser.houseOwnerUserId?.trim();
+    final linkedHouse = memberUser.memberHouseId?.trim();
+    if (linkedOwner != owner && linkedHouse != owner) {
+      final ownerHouse = await HouseResolver.resolveHouseIdForOwner(owner, _db);
+      if (linkedHouse != ownerHouse && linkedOwner != owner) {
+        throw InviteFailure('Ce membre n’appartient pas à votre maison.');
+      }
     }
 
     await FirestoreAuthRepository.instance.unassignUserFromHouse(member);

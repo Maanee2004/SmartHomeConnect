@@ -4,21 +4,34 @@ import 'package:smart_home/theme/smart_home_colors.dart';
 import 'typography.dart';
 
 class CustomTheme {
-  static ThemeData darkTheme({String fontFamily = 'montserrat'}) => _build(
+  static final Map<String, ThemeData> _lightCache = {};
+  static final Map<String, ThemeData> _darkCache = {};
+
+  static ThemeData darkTheme({String fontFamily = 'montserrat'}) {
+    return _darkCache.putIfAbsent(
+      fontFamily,
+      () => _build(
         brightness: Brightness.dark,
         colors: SmartHomeColors.dark,
         sliderActive: Colors.white,
         sliderInactive: Colors.white24,
         fontFamily: fontFamily,
-      );
+      ),
+    );
+  }
 
-  static ThemeData lightTheme({String fontFamily = 'montserrat'}) => _build(
+  static ThemeData lightTheme({String fontFamily = 'montserrat'}) {
+    return _lightCache.putIfAbsent(
+      fontFamily,
+      () => _build(
         brightness: Brightness.light,
         colors: SmartHomeColors.light,
         sliderActive: primaryColor,
         sliderInactive: const Color(0xFFCBD5E1),
         fontFamily: fontFamily,
-      );
+      ),
+    );
+  }
 
   static ThemeData _build({
     required Brightness brightness,

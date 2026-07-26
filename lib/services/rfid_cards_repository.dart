@@ -19,7 +19,7 @@ class RfidCardsRepository {
   CollectionReference<Map<String, dynamic>> get _users =>
       FirebaseFirestore.instance.collection(FirestoreSchema.usersCollection);
 
-  String _scopeUserId() {
+  String _ownerUserId() {
     final owner = AuthService.instance.houseOwnerUserId;
     if (owner != null && owner.isNotEmpty) return owner;
     final id = AuthService.instance.currentUserId;
@@ -27,6 +27,12 @@ class RfidCardsRepository {
       throw RfidCardFailure('Utilisateur non connecté.');
     }
     return id;
+  }
+
+  String _houseId() {
+    final active = AuthService.instance.activeHouseId;
+    if (active != null && active.isNotEmpty) return active;
+    return _ownerUserId();
   }
 
   CollectionReference<Map<String, dynamic>> _cardsCol(String userId) =>
@@ -45,7 +51,7 @@ class RfidCardsRepository {
   }
 
   Stream<List<RfidCard>> watchCards() {
-    final userId = _scopeUserId();
+    final userId = _ownerUserId();
     return _cardsCol(userId).snapshots().map((snap) {
       final cards = snap.docs
           .map((d) => RfidCard.fromFirestore(d.id, d.data()))
@@ -79,7 +85,7 @@ class RfidCardsRepository {
     String? readerId,
     RfidBadgeEffect effect = RfidBadgeEffect.toggle,
   }) async {
-    final userId = _scopeUserId();
+    final userId = _ownerUserId();
     final normalizedUid = _normalizeUid(uid);
     final displayLabel = label.trim();
     if (normalizedUid.isEmpty) {
@@ -122,7 +128,7 @@ class RfidCardsRepository {
     bool clearServo = false,
     bool clearReader = false,
   }) async {
-    final userId = _scopeUserId();
+    final userId = _ownerUserId();
     final id = cardId.trim();
     if (id.isEmpty) return;
 
@@ -154,7 +160,7 @@ class RfidCardsRepository {
   }
 
   Future<void> deleteCard(String cardId) async {
-    final userId = _scopeUserId();
+    final userId = _ownerUserId();
     final id = cardId.trim();
     if (id.isEmpty) return;
     await _cardsCol(userId).doc(id).delete();
@@ -165,11 +171,11 @@ class RfidCardsRepository {
     required String servoId,
     String? readerId,
   }) async {
-    final userId = _scopeUserId();
+    final houseId = _houseId();
     final sid = servoId.trim();
     if (sid.isEmpty) return;
 
-    final ref = _appareilsCol(userId).doc(sid);
+    final ref = _appareilsCol(houseId).doc(sid);
     final snap = await ref.get();
     if (!snap.exists) throw RfidCardFailure('Porte (SERVO) introuvable.');
 

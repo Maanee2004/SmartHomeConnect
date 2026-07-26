@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:smart_home/models/app_user.dart';
+import 'package:smart_home/models/sensor_threshold_config.dart';
 import 'package:smart_home/models/user_role.dart';
 import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_house_paths.dart';
 import 'package:smart_home/services/firestore_schema.dart';
+import 'package:smart_home/services/admin_repository.dart';
 import 'package:smart_home/services/house_invites_repository.dart';
+import 'package:smart_home/services/house_resolver.dart';
 import 'package:smart_home/services/password_hasher.dart';
 
 class AuthFailure implements Exception {
@@ -193,6 +196,11 @@ class FirestoreAuthRepository {
         'use24HourTime': true,
         'datePattern': 'dd/MM/yyyy',
         'alertThreshold': 35.0,
+        'pirAlertsEnabled': true,
+        'sensorAlerts': {
+          for (final e in SensorThresholdConfig.defaultsByType.entries)
+            e.key: e.value.toFirestore(),
+        },
       },
     );
     await batch.commit();
@@ -251,6 +259,8 @@ class FirestoreAuthRepository {
     required String email,
     required String phone,
     required String plainPassword,
+    String? memberHouseId,
+    String? ownerOfHouseId,
     String? houseOwnerUserId,
   }) async {
     await _ensureAnonymousAuth();
@@ -262,23 +272,56 @@ class FirestoreAuthRepository {
     await _assertEmailFree(mail);
     await _assertPhoneFree(tel);
 
-    final owner = houseOwnerUserId?.trim();
-    if (owner != null && owner.isNotEmpty) {
-      final ownerSnap = await _users.doc(owner).get();
+    final guestHouse = memberHouseId?.trim();
+    final ownerHouse = ownerOfHouseId?.trim();
+    final legacyOwner = houseOwnerUserId?.trim();
+
+    if (guestHouse != null &&
+        guestHouse.isNotEmpty &&
+        ownerHouse != null &&
+        ownerHouse.isNotEmpty) {
+      throw AuthFailure(
+        'Choisissez soit une maison invité, soit une maison propriétaire.',
+      );
+    }
+
+    if (guestHouse != null && guestHouse.isNotEmpty) {
+      final houseSnap =
+          await FirestoreHousePaths.houseDoc(FirebaseFirestore.instance, guestHouse).get();
+      if (!houseSnap.exists) {
+        throw AuthFailure('Maison introuvable ($guestHouse).');
+      }
+    }
+    if (ownerHouse != null && ownerHouse.isNotEmpty) {
+      final houseSnap =
+          await FirestoreHousePaths.houseDoc(FirebaseFirestore.instance, ownerHouse).get();
+      if (!houseSnap.exists) {
+        throw AuthFailure('Maison introuvable ($ownerHouse).');
+      }
+      final existingOwner =
+          (houseSnap.data()?[FirestoreSchema.fieldOwnerUserId] as String?)?.trim();
+      if (existingOwner != null && existingOwner.isNotEmpty) {
+        throw AuthFailure('Cette maison a déjà un propriétaire.');
+      }
+    }
+    if (legacyOwner != null && legacyOwner.isNotEmpty) {
+      final ownerSnap = await _users.doc(legacyOwner).get();
       if (!ownerSnap.exists) {
-        throw AuthFailure('Propriétaire de maison introuvable ($owner).');
+        throw AuthFailure('Propriétaire de maison introuvable ($legacyOwner).');
       }
     }
 
     final userId = await _allocateUserId(mail);
+    final initialRole =
+        ownerHouse != null && ownerHouse.isNotEmpty ? UserRole.owner : UserRole.user;
+
     final user = AppUser(
       userId: userId,
       name: name.trim(),
       email: mail,
       phone: tel,
       passwordHash: PasswordHasher.hash(plainPassword),
-      role: UserRole.user,
-      houseOwnerUserId: owner,
+      role: initialRole,
     );
 
     final batch = FirebaseFirestore.instance.batch();
@@ -299,72 +342,70 @@ class FirestoreAuthRepository {
         'use24HourTime': true,
         'datePattern': 'dd/MM/yyyy',
         'alertThreshold': 35.0,
+        'pirAlertsEnabled': true,
+        'sensorAlerts': {
+          for (final e in SensorThresholdConfig.defaultsByType.entries)
+            e.key: e.value.toFirestore(),
+        },
       },
     );
     await batch.commit();
-    await FirestoreHousePaths.ensureInitialized(
-      FirebaseFirestore.instance,
-      userId,
-    );
 
-    if (owner != null && owner.isNotEmpty) {
-      await _addMemberToHouse(ownerUserId: owner, memberUserId: userId);
+    if (guestHouse != null && guestHouse.isNotEmpty) {
+      await AdminRepository.instance.assignMemberToHouse(
+        houseId: guestHouse,
+        memberUserId: userId,
+      );
+    } else if (ownerHouse != null && ownerHouse.isNotEmpty) {
+      await AdminRepository.instance.assignOwnerToHouse(
+        houseId: ownerHouse,
+        ownerUserId: userId,
+      );
+    } else if (legacyOwner != null && legacyOwner.isNotEmpty) {
+      final houseId = await HouseResolver.resolveHouseIdForOwner(
+        legacyOwner,
+        FirebaseFirestore.instance,
+      );
+      await AdminRepository.instance.assignMemberToHouse(
+        houseId: houseId,
+        memberUserId: userId,
+      );
+    } else {
+      await FirestoreHousePaths.ensureInitialized(
+        FirebaseFirestore.instance,
+        userId,
+        ownerUserId: initialRole == UserRole.owner ? userId : null,
+      );
     }
-    return user;
+
+    return await fetchUserById(userId) ?? user;
   }
 
-  /// Lie un utilisateur à la maison d’un propriétaire (lecture + commandes).
+  /// Lie un utilisateur à une maison en tant qu’invité.
   Future<void> assignUserToHouse({
+    required String houseId,
+    required String memberUserId,
+  }) async {
+    await AdminRepository.instance.assignMemberToHouse(
+      houseId: houseId,
+      memberUserId: memberUserId,
+    );
+  }
+
+  /// Legacy : rattache via l’ID du propriétaire.
+  Future<void> assignUserToHouseByOwner({
     required String ownerUserId,
     required String memberUserId,
   }) async {
-    final owner = ownerUserId.trim();
-    final member = memberUserId.trim();
-    if (owner.isEmpty || member.isEmpty) {
-      throw AuthFailure('Identifiants invalides.');
-    }
-    if (owner == member) {
-      throw AuthFailure('Un utilisateur ne peut pas être membre de sa propre maison.');
-    }
-    final ownerSnap = await _users.doc(owner).get();
-    final memberSnap = await _users.doc(member).get();
-    if (!ownerSnap.exists || !memberSnap.exists) {
-      throw AuthFailure('Utilisateur introuvable.');
-    }
-    await _users.doc(member).set(
-      {'houseOwnerUserId': owner},
+    final houseId = await HouseResolver.resolveHouseIdForOwner(
+      ownerUserId,
+      FirebaseFirestore.instance,
+    );
+    await assignUserToHouse(houseId: houseId, memberUserId: memberUserId);
+    await _users.doc(memberUserId.trim()).set(
+      {'houseOwnerUserId': ownerUserId.trim()},
       SetOptions(merge: true),
     );
-    await _addMemberToHouse(ownerUserId: owner, memberUserId: member);
-  }
-
-  Future<void> _addMemberToHouse({
-    required String ownerUserId,
-    required String memberUserId,
-  }) async {
-    final prefRef = _users
-        .doc(ownerUserId)
-        .collection(FirestoreSchema.preferencesSubcollection)
-        .doc(FirestoreSchema.preferencesDocId);
-    await FirebaseFirestore.instance.runTransaction((tx) async {
-      final snap = await tx.get(prefRef);
-      final data = snap.data() ?? {};
-      final raw = data['memberUserIds'];
-      final members = <String>{
-        if (raw is List)
-          for (final item in raw)
-            if (item is String && item.trim().isNotEmpty) item.trim(),
-      };
-      members.add(memberUserId);
-      tx.set(
-        prefRef,
-        {
-          FirestoreSchema.fieldUserId: ownerUserId,
-          'memberUserIds': members.toList()..sort(),
-        },
-        SetOptions(merge: true),
-      );
-    });
   }
 
   Future<AppUser?> fetchUserById(String userId) async {
@@ -438,11 +479,21 @@ class FirestoreAuthRepository {
 
     if (normalizedRole != null && UserRole.isOwner(normalizedRole)) {
       try {
+        final houseId = existing.ownedHouseId?.trim().isNotEmpty == true
+            ? existing.ownedHouseId!.trim()
+            : docId;
+        patch[FirestoreSchema.fieldOwnedHouseId] = houseId;
         await FirestoreHousePaths.ensureInitialized(
           FirebaseFirestore.instance,
-          docId,
+          houseId,
+          ownerUserId: docId,
         );
-        await HouseInvitesRepository.instance.ensurePrimaryInvite(docId);
+        await FirestoreHousePaths.houseDoc(FirebaseFirestore.instance, houseId)
+            .set(
+          {FirestoreSchema.fieldOwnerUserId: docId},
+          SetOptions(merge: true),
+        );
+        await HouseInvitesRepository.instance.ensurePrimaryInvite(houseId);
       } catch (e) {
         // ignore: avoid_print
         print('[Admin] invite maison ignorée pour $docId: $e');
@@ -450,45 +501,40 @@ class FirestoreAuthRepository {
     }
   }
 
-  /// Retire un membre de la maison d’un propriétaire.
+  /// Retire un membre de sa maison.
   Future<void> unassignUserFromHouse(String memberUserId) async {
     final member = memberUserId.trim();
     if (member.isEmpty) throw AuthFailure('Identifiant invalide.');
 
     final memberSnap = await _users.doc(member).get();
     if (!memberSnap.exists) throw AuthFailure('Utilisateur introuvable.');
+    final memberUser = AppUser.fromFirestore(member, memberSnap.data()!);
 
-    final owner =
-        (memberSnap.data()?['houseOwnerUserId'] as String?)?.trim();
-    await _users.doc(member).set(
-      {'houseOwnerUserId': FieldValue.delete()},
-      SetOptions(merge: true),
-    );
-
-    if (owner != null && owner.isNotEmpty) {
-      final prefRef = _users
-          .doc(owner)
-          .collection(FirestoreSchema.preferencesSubcollection)
-          .doc(FirestoreSchema.preferencesDocId);
-      await FirebaseFirestore.instance.runTransaction((tx) async {
-        final snap = await tx.get(prefRef);
-        final data = snap.data() ?? {};
-        final raw = data['memberUserIds'];
-        final members = <String>{
-          if (raw is List)
-            for (final item in raw)
-              if (item is String && item.trim().isNotEmpty) item.trim(),
-        }..remove(member);
-        tx.set(
-          prefRef,
-          {
-            FirestoreSchema.fieldUserId: owner,
-            'memberUserIds': members.toList()..sort(),
-          },
-          SetOptions(merge: true),
+    String? houseId = memberUser.memberHouseId?.trim();
+    if (houseId == null || houseId.isEmpty) {
+      final owner = memberUser.houseOwnerUserId?.trim();
+      if (owner != null && owner.isNotEmpty) {
+        houseId = await HouseResolver.resolveHouseIdForOwner(
+          owner,
+          FirebaseFirestore.instance,
         );
-      });
+      }
     }
+    if (houseId == null || houseId.isEmpty) {
+      await _users.doc(member).set(
+        {
+          'houseOwnerUserId': FieldValue.delete(),
+          FirestoreSchema.fieldMemberHouseId: FieldValue.delete(),
+        },
+        SetOptions(merge: true),
+      );
+      return;
+    }
+
+    await AdminRepository.instance.removeMemberFromHouse(
+      houseId: houseId,
+      memberUserId: member,
+    );
   }
 
   Stream<List<AppUser>> watchAllUsers() {

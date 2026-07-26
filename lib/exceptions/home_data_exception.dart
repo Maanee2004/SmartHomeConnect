@@ -7,14 +7,29 @@ class DuplicateRoomNameException implements Exception {
 }
 
 class PinAlreadyAssignedException implements Exception {
-  PinAlreadyAssignedException(this.pin, {this.existingDeviceId});
+  PinAlreadyAssignedException(
+    this.pin, {
+    this.existingDeviceId,
+    this.existingDeviceName,
+  });
   final int pin;
   final String? existingDeviceId;
-  @override
-  String toString() {
-    final who = existingDeviceId != null ? ' ($existingDeviceId)' : '';
-    return 'La broche $pin est déjà utilisée$who.';
+  final String? existingDeviceName;
+
+  /// Message pour l’interface (sans id technique si le nom est connu).
+  String messageForUser({bool includeTechnicalIds = false}) {
+    final name = existingDeviceName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return 'La broche $pin est déjà utilisée par « $name ».';
+    }
+    if (includeTechnicalIds && existingDeviceId != null) {
+      return 'La broche $pin est déjà utilisée ($existingDeviceId).';
+    }
+    return 'La broche $pin est déjà utilisée. Choisis une autre broche libre.';
   }
+
+  @override
+  String toString() => messageForUser();
 }
 
 class AppareilValidationException implements Exception {

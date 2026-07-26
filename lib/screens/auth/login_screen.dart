@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/screens/auth/register_screen.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:smart_home/services/app_startup.dart';
 import 'package:smart_home/services/auth_service.dart';
 import 'package:smart_home/services/firebase_anonymous_auth.dart';
 import 'package:smart_home/services/firestore_auth_repository.dart';
@@ -73,21 +73,21 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
-    unawaited(_warmUpFirebase());
-  }
-
-  Future<void> _warmUpFirebase() async {
-    if (Firebase.apps.isEmpty) return;
-    await FirebaseAnonymousAuth.trySignIn();
+    unawaited(AppStartup.ensureFirebase());
+    unawaited(FirebaseAnonymousAuth.trySignIn(maxAttempts: 1));
   }
 
   Future<bool> _ensureFirebaseReady() async {
-    if (Firebase.apps.isEmpty) {
+    try {
+      await AppStartup.ensureFirebase();
+    } catch (_) {
+      if (!mounted) return false;
       _showLoginError(
         'Firebase non initialisé. Rechargez la page ou relancez l’application.',
       );
       return false;
     }
+    if (!mounted) return false;
     await FirebaseAnonymousAuth.trySignIn();
     return true;
   }
@@ -578,10 +578,25 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(color: c.textSecondary),
                         ),
                         GestureDetector(
-                          onTap: () {
-                            Navigator.of(context).push(
+                          onTap: () async {
+                            final registeredEmail =
+                                await Navigator.of(context).push<String>(
                               MaterialPageRoute(
                                 builder: (_) => const RegisterScreen(),
+                              ),
+                            );
+                            if (!context.mounted || registeredEmail == null) {
+                              return;
+                            }
+                            setState(() {
+                              _useEmail = true;
+                              _emailController.text = registeredEmail;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Inscription confirmée. Connectez-vous avec vos identifiants.',
+                                ),
                               ),
                             );
                           },

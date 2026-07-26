@@ -1,38 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:smart_home/firebase_options.dart';
 import 'package:smart_home/screens/auth/login_screen.dart';
 import 'package:smart_home/screens/admin/admin_shell_screen.dart';
 import 'package:smart_home/screens/home/home_shell_screen.dart';
+import 'package:smart_home/services/app_startup.dart';
 import 'package:smart_home/services/auth_service.dart';
-import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/services/user_preferences_service.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'theme/app_theme_scope.dart';
 import 'theme/custom_theme.dart';
+import 'package:smart_home/widgets/alert_listener.dart';
 import 'package:smart_home/widgets/offline_banner.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (_) {
-    // Sur Web, Firebase nécessite des options (flutterfire configure).
-  }
-  try {
-    if (Firebase.apps.isNotEmpty) {
-      await AuthService.instance.initSession();
-      await FirestoreHomeRepository.bootstrap();
-    }
-  } catch (e, st) {
-    // ignore: avoid_print
-    print('[Firestore] bootstrap: $e\n$st');
-  }
-  await UserPreferencesService.instance.init();
+
+  await Future.wait([
+    AppStartup.ensureFirebase(),
+    UserPreferencesService.instance.init(),
+    AuthService.instance.initSession(),
+  ]);
+
   runApp(const MyApp());
+  // Auth anonyme + Firestore streams sans bloquer le premier frame.
+  AppStartup.warmUpInBackground();
 }
 
 class MyApp extends StatefulWidget {
@@ -85,6 +79,7 @@ class _MyAppState extends State<MyApp> {
         builder: (context, _) {
           final p = _prefs.prefs;
           return MaterialApp(
+            navigatorKey: appNavigatorKey,
             debugShowCheckedModeBanner: false,
             title: 'Smart Home',
             locale: p.locale,
@@ -94,6 +89,7 @@ class _MyAppState extends State<MyApp> {
               Locale('ar'),
             ],
             localizationsDelegates: const [
+              AppLocalizations.delegate,
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
@@ -109,12 +105,15 @@ class _MyAppState extends State<MyApp> {
               );
               return MediaQuery(
                 data: scaled,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const OfflineBanner(),
-                    Expanded(child: child ?? const SizedBox.shrink()),
-                  ],
+                child: AlertListener(
+                  navigatorKey: appNavigatorKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const OfflineBanner(),
+                      Expanded(child: child ?? const SizedBox.shrink()),
+                    ],
+                  ),
                 ),
               );
             },

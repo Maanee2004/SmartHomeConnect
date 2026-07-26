@@ -22,6 +22,9 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
   List<AppUser> _members = [];
   bool _loadingMembers = true;
 
+  String? get _houseId => AuthService.instance.activeHouseId ??
+      AuthService.instance.currentUserId;
+
   @override
   void initState() {
     super.initState();
@@ -31,10 +34,10 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
   }
 
   Future<void> _ensurePrimaryCode() async {
-    final owner = _ownerId;
-    if (owner == null) return;
+    final house = _houseId;
+    if (house == null) return;
     try {
-      await _repo.ensurePrimaryInvite(owner);
+      await _repo.ensurePrimaryInvite(house);
     } catch (_) {}
   }
 
@@ -60,9 +63,11 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
 
   Future<void> _createInvite() async {
     final owner = _ownerId;
-    if (owner == null) return;
+    final house = _houseId;
+    if (owner == null || house == null) return;
     try {
       await _repo.createInvite(
+        houseId: house,
         ownerUserId: owner,
         label: 'Invitation ${DateTime.now().day}/${DateTime.now().month}',
         expiresIn: const Duration(days: 30),
@@ -80,8 +85,8 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
   }
 
   Future<void> _revokeInvite(String inviteId) async {
-    final owner = _ownerId;
-    if (owner == null) return;
+    final house = _houseId;
+    if (house == null) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -104,7 +109,7 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
     if (ok != true) return;
 
     try {
-      await _repo.revokeInvite(ownerUserId: owner, inviteId: inviteId);
+      await _repo.revokeInvite(houseId: house, inviteId: inviteId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Code révoqué.')),
@@ -162,7 +167,9 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
     final owner = _ownerId;
     final c = context.smartColors;
 
-    if (owner == null) {
+    final house = _houseId;
+
+    if (owner == null || house == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Mes invités')),
         body: const Center(child: Text('Session invalide.')),
@@ -198,7 +205,7 @@ class _HouseInvitesScreenState extends State<HouseInvitesScreen> {
             ),
             const SizedBox(height: 8),
             StreamBuilder(
-              stream: _repo.watchInvites(owner),
+              stream: _repo.watchInvites(house),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting &&
                     !snap.hasData) {

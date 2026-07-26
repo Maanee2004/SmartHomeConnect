@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
 import 'package:smart_home/theme/responsive_layout.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
+import 'package:smart_home/models/device.dart';
 import 'package:smart_home/models/house_room.dart';
 import 'package:smart_home/services/auth_service.dart';
 import 'package:smart_home/services/firestore_home_repository.dart';
 import 'package:smart_home/theme/room_icons.dart';
 import 'package:smart_home/widgets/load_error_view.dart';
+import 'package:smart_home/screens/home/room_detail_screen.dart';
 import 'package:smart_home/widgets/theme_toggle_button.dart';
 
 class PiecesScreen extends StatefulWidget {
@@ -15,10 +17,14 @@ class PiecesScreen extends StatefulWidget {
     super.key,
     required this.bottomNavigationBar,
     this.onOpenDashboard,
+    this.onBrowseRoom,
   });
 
   final Widget bottomNavigationBar;
   final VoidCallback? onOpenDashboard;
+
+  /// Ouvre l’accueil filtré sur cette pièce.
+  final void Function(String roomId)? onBrowseRoom;
 
   @override
   State<PiecesScreen> createState() => _PiecesScreenState();
@@ -26,6 +32,9 @@ class PiecesScreen extends StatefulWidget {
 
 class _PiecesScreenState extends State<PiecesScreen> {
   static final _repo = FirestoreHomeRepository();
+
+  static int _deviceCountForRoom(List<Device> devices, HouseRoom room) =>
+      devices.where((d) => HouseRoom.deviceBelongsToRoom(d, room)).length;
 
   bool get _canAddRoom =>
       Firebase.apps.isNotEmpty && AuthService.instance.canAddRooms;
@@ -225,58 +234,80 @@ class _PiecesScreenState extends State<PiecesScreen> {
                   );
                 }
 
-                return ListView.separated(
-                  padding: context.responsive.listPadding,
-                  itemCount: rooms.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final room = rooms[index];
-                    return Material(
-                      color: context.smartColors.card,
-                      borderRadius: BorderRadius.circular(14),
-                      child: ListTile(
-                        shape: RoundedRectangleBorder(
+                return StreamBuilder<List<Device>>(
+                  stream: _repo.watchDevices(),
+                  initialData: const <Device>[],
+                  builder: (context, devSnap) {
+                    final devices = devSnap.data ?? const <Device>[];
+                    return ListView.separated(
+                      padding: context.responsive.listPadding,
+                      itemCount: rooms.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final room = rooms[index];
+                        final count = _deviceCountForRoom(devices, room);
+                        return Material(
+                          color: context.smartColors.card,
                           borderRadius: BorderRadius.circular(14),
-                        ),
-                        leading: Icon(
-                          roomIconFromName(room.name),
-                          color: accentColor,
-                        ),
-                        title: Text(
-                          room.name,
-                          style: TextStyle(
-                            color: context.smartColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'id: ${room.id}',
-                          style: TextStyle(
-                            color: context.smartColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_canAddRoom)
-                              IconButton(
-                                icon: Icon(
-                                  Icons.edit_outlined,
-                                  color: context.smartColors.textSecondary,
-                                  size: 20,
-                                ),
-                                tooltip: 'Renommer',
-                                onPressed: () => _promptRenameRoom(room),
-                              ),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: context.smartColors.textSecondary,
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                          ],
-                        ),
-                        onTap: widget.onOpenDashboard,
-                      ),
+                            leading: Icon(
+                              roomIconFromName(room.name),
+                              color: accentColor,
+                            ),
+                            title: Text(
+                              room.name,
+                              style: TextStyle(
+                                color: context.smartColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              count == 0
+                                  ? 'Aucun appareil — touchez pour gérer'
+                                  : count == 1
+                                      ? '1 appareil'
+                                      : '$count appareils',
+                              style: TextStyle(
+                                color: context.smartColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_canAddRoom)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.edit_outlined,
+                                      color: context.smartColors.textSecondary,
+                                      size: 20,
+                                    ),
+                                    tooltip: 'Renommer',
+                                    onPressed: () => _promptRenameRoom(room),
+                                  ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: context.smartColors.textSecondary,
+                                ),
+                              ],
+                            ),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => RoomDetailScreen(
+                                    room: room,
+                                    onBrowseOnDashboard:
+                                        widget.onBrowseRoom,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
                     );
                   },
                 );

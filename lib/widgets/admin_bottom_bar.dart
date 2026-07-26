@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_home/constants.dart';
+import 'package:smart_home/l10n/app_localizations.dart';
 import 'package:smart_home/theme/smart_home_colors.dart';
 
 /// Barre de navigation admin (même esthétique que l’app utilisateur).
@@ -13,15 +14,15 @@ class AdminBottomBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelect;
 
-  static const _items = <_NavItem>[
-    _NavItem(icon: Icons.home_work_rounded, label: 'Maisons'),
-    _NavItem(icon: Icons.people_rounded, label: 'Utilisateurs'),
-    _NavItem(icon: Icons.admin_panel_settings_rounded, label: 'Profil'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final c = context.smartColors;
+    final l10n = context.l10n;
+    final items = [
+      _NavItem(icon: Icons.home_work_rounded, label: l10n.navHouses),
+      _NavItem(icon: Icons.people_rounded, label: l10n.navUsers),
+      _NavItem(icon: Icons.admin_panel_settings_rounded, label: l10n.navProfile),
+    ];
 
     return Material(
       color: c.scaffoldBackground,
@@ -39,10 +40,10 @@ class AdminBottomBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Row(
               children: [
-                for (var i = 0; i < _items.length; i++)
+                for (var i = 0; i < items.length; i++)
                   Expanded(
                     child: _BottomNavItem(
-                      item: _items[i],
+                      item: items[i],
                       selected: selectedIndex == i,
                       onPressed: () => onSelect(i),
                     ),
